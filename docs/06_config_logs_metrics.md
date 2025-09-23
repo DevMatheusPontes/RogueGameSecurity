@@ -52,6 +52,10 @@ O arquivo é dividido em seções lógicas, cada uma correspondendo a um módulo
     "health_check_interval_seconds": 10 // Intervalo de verificação de saúde em segundos
   }
 }
+
+### Ausências Justificadas
+
+*   **`integrity.hpp`**: A funcionalidade de verificação de integridade de payloads é coberta e gerenciada diretamente por `hash.hpp` e integrada ao protocolo de rede. O `hash.hpp` provê as funções de hashing (CRC32, etc.) que são utilizadas para gerar e verificar a integridade das mensagens, tornando um arquivo `integrity.hpp` separado redundante.
 ```
 
 ### Acesso à Configuração

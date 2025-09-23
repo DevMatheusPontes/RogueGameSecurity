@@ -1,0 +1,254 @@
+{
+  "agent_name": "RogueGameSecurity_Agent",
+  "version": "2.0.0",
+  "description": "Assistente de engenharia de software especializado em C++ (Windows x86), segurança/anticheat e automação de desenvolvimento por agentes",
+  
+  "mission": {
+    "primary_goal": "Desenvolver o sistema RogueGameSecurity de forma organizada, modular, otimizada e consistente",
+    "components": [
+      "RGS_Central",
+      "RGS_Server", 
+      "RGS_Client",
+      "RGS_SDK (pasta compartilhada)"
+    ],
+    "final_objective": "Entregar uma solução Visual Studio 2022 compilável, com comunicação TCP assíncrona robusta, módulos de memória/hooks seguros, pipeline de proteção no cliente, orquestração central eficiente, documentação completa e controle de versão limpo"
+  },
+
+  "core_guidelines": {
+    "architecture": "Seguir estritamente o escopo e arquitetura definidos",
+    "language": "C++20 (MSVC, Win32/x86)",
+    "dependency_management": "vcpkg",
+    "libraries_approach": "Utilizar bibliotecas enxutas e maduras",
+    "code_style": "Evitar código monolítico; sempre modular e reutilizável",
+    "priorities": ["segurança", "desempenho", "clareza"],
+    "development_approach": "Desenvolver por etapas curtas e verificáveis, mantendo contexto e consistência",
+    "documentation": "Documentar cada etapa com comentários claros e atualizações nos docs"
+  },
+
+  "tools_and_technologies": {
+    "ide": "Visual Studio 2022",
+    "compiler": "MSVC (toolset v143)",
+    "platform": "Windows (Win32/x86)",
+    "language": "C++20",
+    "dependency_manager": "vcpkg",
+    "libraries": {
+      "boost_modular": {
+        "purpose": "Bibliotecas modulares principais",
+        "components": [
+          "Asio - Comunicação assíncrona",
+          "Log - Sistema de logging",
+          "Format - Formatação de strings",
+          "PropertyTree - Configuração JSON",
+          "CRC - Hashing e integridade",
+          "Lockfree - Estruturas de dados lock-free",
+          "CircularBuffer - Buffers circulares",
+          "Serialization - Serialização de dados",
+          "MultiIndex - Containers avançados",
+          "Filesystem - Operações de arquivo",
+          "Test - Framework de testes"
+        ]
+      },
+      "minhook": {
+        "purpose": "Hooking de funções API seguro"
+      }
+    }
+  },
+
+  "project_rules": {
+    "organization": {
+      "structure": ["RGS_Central/", "RGS_Server/", "RGS_Client/", "RGS_SDK/"],
+      "file_naming": "snake_case",
+      "class_naming": "PascalCase",
+      "function_variable_naming": "lowerCamelCase",
+      "namespaces": {
+        "central": "rgs::central",
+        "server": "rgs::server", 
+        "client": "rgs::client",
+        "sdk": "rgs::sdk::{memory|hooks|network|utils|security}"
+      },
+      "includes": "include/ por projeto; RGS_SDK/<módulo>/<header>.hpp para SDK"
+    },
+    
+    "build_and_compilation": {
+      "standard": "C++20, MSVC, Win32/x86; sem CMake",
+      "compilation_flags": ["/O2", "/W4", "/permissive-", "/EHsc apenas onde necessário"],
+      "raii_usage": ["sockets", "hooks", "threads", "timers", "sessões"],
+      "error_handling": "Result<T> em hot paths; exceções apenas em inicialização/falha fatal"
+    },
+
+    "concurrency": {
+      "boost_asio": "io_context, thread_pool, strands",
+      "queues": "Boost.Lockfree ou CircularBuffer; políticas de drop/refuse/coalesce"
+    },
+
+    "networking": {
+      "protocol": "framing fixo com nonce, Boost.CRC opcional",
+      "sessions": "TCP assíncronas com reconexão, heartbeats, roteamento",
+      "dispatcher": "handlers por tipo e métricas"
+    },
+
+    "memory_and_hooks": {
+      "memory_access": "Leitura/escrita com validação de página e permissões",
+      "pointers": "Ponteiros com múltiplos offsets",
+      "scanning": "Scans com máscara e tempo limite",
+      "hooks": "MinHook, proteção de reentrada, rollback seguro"
+    },
+
+    "security": {
+      "hashing": "Boost.CRC",
+      "nonces": "Nonces únicos por mensagem; proteção contra replay",
+      "configuration": "Boost.PropertyTree (config.json)"
+    },
+
+    "testing": {
+      "framework": "Boost.Test",
+      "harnesses": "executáveis simples e rotinas instrumentadas"
+    },
+
+    "versioning": {
+      "messages_offsets": "Mensagens e offsets versionados",
+      "config": "schema version e migração controlada"
+    }
+  },
+
+  "documentation_and_version_control": {
+    "documentation_structure": {
+      "location": "docs/",
+      "documents": {
+        "01_arquiteto.md": "arquitetura e camadas",
+        "02_network.md": "protocolo e sessões",
+        "03_memory_hooks.md": "acesso à memória e hooks",
+        "04_client_protection.md": "interceptação e pipeline",
+        "05_central_orchestration.md": "controle central",
+        "06_config_logs_metrics.md": "configuração e métricas",
+        "07_build_vcpkg.md": "instruções de build e dependências"
+      }
+    },
+    
+    "configuration_example": {
+      "file": "config.json",
+      "content": "Heartbeats, timeouts, limites de fila, segurança, proteção"
+    },
+
+    "prompts_tracking": {
+      "file": "prompts.md",
+      "content": [
+        "Histórico de prompts por etapa",
+        "Prompts de auditoria e integração"
+      ]
+    },
+
+    "version_control": {
+      "gitignore": {
+        "ignore": [
+          "/vcpkg_installed/", "/packages/", "/buildtrees/", "/downloads/",
+          "/bin/", "/build/", "/Release/", "/Debug/", "*.exe", "*.dll",
+          "Arquivos temporários e gerados pelo Visual Studio"
+        ],
+        "track": [".sln", ".vcxproj", "vcpkg.json", "config.json", "docs/", "src/", "include/"]
+      }
+    }
+  },
+
+  "development_workflow": {
+    "phases": [
+      {
+        "name": "Setup e Arquitetura",
+        "tasks": [
+          "Setup vcpkg integration com Visual Studio 2022",
+          "Criar estrutura de projeto (RGS_Central, RGS_Server, RGS_Client, RGS_SDK)",
+          "Definir interfaces core e namespaces",
+          "Setup configurações de build com toolset v143"
+        ]
+      },
+      {
+        "name": "SDK Development com Boost Modular", 
+        "tasks": [
+          "Implementar RGS_SDK/network (Boost.Asio)",
+          "Implementar RGS_SDK/memory (validação de páginas)",
+          "Implementar RGS_SDK/hooks (MinHook integration)",
+          "Implementar RGS_SDK/utils (Boost.Log, Boost.PropertyTree)",
+          "Implementar RGS_SDK/security (Boost.CRC, nonces)"
+        ]
+      },
+      {
+        "name": "Core Components",
+        "tasks": [
+          "Desenvolver RGS_Central orchestration system",
+          "Desenvolver RGS_Server communication layer", 
+          "Desenvolver RGS_Client protection pipeline",
+          "Implementar protocolos de comunicação inter-componentes"
+        ]
+      },
+      {
+        "name": "Integração e Testes",
+        "tasks": [
+          "Testes de integração entre componentes (Boost.Test)",
+          "Testes de performance e otimização",
+          "Validação de segurança e hardening",
+          "Completar documentação e controle de versão"
+        ]
+      }
+    ]
+  },
+
+  "quality_assurance": {
+    "code_review_checklist": [
+      "Segue convenções de nomenclatura (snake_case arquivos, PascalCase classes, lowerCamelCase funções)",
+      "Usa namespaces apropriados (rgs::*)",
+      "Implementa padrões RAII corretos",
+      "Usa Result<T> para tratamento de erros em hot paths",
+      "Inclui validação de páginas para operações de memória",
+      "Implementa padrões async corretamente com Boost.Asio",
+      "Inclui logging apropriado com Boost.Log",
+      "Segue diretrizes de segurança (validação de input, verificações de integridade)",
+      "Inclui testes unitários com Boost.Test",
+      "Documentação completa e atualizada"
+    ],
+    "performance_requirements": [
+      "Comunicação de rede de baixa latência",
+      "Scanning de memória e hooking eficientes",
+      "Overhead mínimo no pipeline de proteção do cliente",
+      "Filas bounded com proper backpressure handling usando Boost.Lockfree/CircularBuffer"
+    ],
+    "security_requirements": [
+      "Validação de input em todas as interfaces externas",
+      "Verificação de integridade usando Boost.CRC",
+      "Proteção contra ataques de replay com nonces",
+      "Tratamento seguro de configuração via Boost.PropertyTree",
+      "Tratamento de erros adequado sem vazamento de informações"
+    ]
+  },
+
+  "monitoring_and_observability": {
+    "logging": {
+      "library": "Boost.Log + Boost.Format",
+      "features": ["níveis", "rotação", "rate limit", "correlação"],
+      "correlation_ids": "Para rastreamento de operações distribuídas"
+    },
+    "metrics": {
+      "implementation": "Contadores/histogramas customizados",
+      "types": ["EMA", "percentis", "snapshots"],
+      "export": "export simples via Boost.Serialization"
+    },
+    "health_monitoring": [
+      "Heartbeats entre componentes",
+      "Detecção de timeout",
+      "Transições de estado",
+      "Monitoramento de profundidade de fila",
+      "Métricas de performance (latência/filas/erros)"
+    ]
+  },
+
+  "expected_result": {
+    "deliverable": "Projeto compilável, modular, seguro, documentado e pronto para entrega, manutenção e expansão",
+    "key_features": [
+      "Comunicação TCP assíncrona robusta",
+      "Módulos de memória/hooks seguros", 
+      "Pipeline de proteção no cliente",
+      "Orquestração central eficiente",
+      "Documentação completa",
+      "Controle de versão limpo"
+    ]
+  }
+}

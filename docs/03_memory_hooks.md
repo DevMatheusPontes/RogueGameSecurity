@@ -56,6 +56,10 @@ Um utilitário header-only para prevenir recursão infinita em funções hookada
 
 *   **`RGS_REENTRY_GUARD()` macro:** Deve ser usada no início de uma função de desvio para garantir que a função original possa ser chamada sem que o detour seja acionado novamente, evitando loops infinitos.
 
+### Ausências Justificadas
+
+*   **`trampoline.hpp` e `patch_utils.hpp`**: As funcionalidades de criação de trampolines e aplicação/verificação de patches são inteiramente abstraídas e gerenciadas pela biblioteca `MinHook` e encapsuladas dentro de `hook_manager.hpp`. Não foi necessário criar arquivos separados para estas utilidades, pois a integração direta com `MinHook` já provê a robustez e segurança necessárias.
+
 ## Configuração
 
 O comportamento dos módulos de memória e hooks é configurável via `config.json`:
