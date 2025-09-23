@@ -1,0 +1,34 @@
+{
+  "network": {
+    "heartbeat_interval_ms": 5000,
+    "session_timeout_ms": 15000,
+    "max_payload_size": 4096,
+    "enable_hmac": false
+  },
+  "queues": {
+    "high_priority_capacity": 128,
+    "medium_priority_capacity": 256,
+    "low_priority_capacity": 512,
+    "low_priority_policy": "coalesce"
+  },
+  "memory": {
+    "max_read_size": 1024,
+    "max_write_size": 1024,
+    "allow_protected_write": false
+  },
+  "hooks": {
+    "max_active_hooks": 64,
+    "verify_on_install": true,
+    "rollback_on_failure": true
+  },
+  "security": {
+    "nonce_window_size": 1000,
+    "hash_type": "crc32",
+    "reject_replay": true
+  },
+  "protection": {
+    "event_rate_limit_per_minute": 100,
+    "coalesce_duplicates": true,
+    "report_priority": "medium"
+  }
+}

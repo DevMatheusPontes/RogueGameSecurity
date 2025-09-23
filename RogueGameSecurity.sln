@@ -1,0 +1,30 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RGS_Central", "RGS_Central\RGS_Central.vcxproj", "{b3ead768-e896-4d8c-bf0c-95ea8ee3d8c8}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RGS_Server", "RGS_Server\RGS_Server.vcxproj", "{7c80eecd-29d5-4c68-b687-4d647d410d87}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RGS_Client", "RGS_Client\RGS_Client.vcxproj", "{c9e5b075-3689-46be-b76b-5bc1829b1224}"
+EndProject
+Global
+    GlobalSection(SolutionConfigurationPlatforms) = preSolution
+        Debug|Win32 = Debug|Win32
+        Release|Win32 = Release|Win32
+    EndGlobalSection
+    GlobalSection(ProjectConfigurationPlatforms) = postSolution
+        {b3ead768-e896-4d8c-bf0c-95ea8ee3d8c8}.Debug|Win32.ActiveCfg = Debug|Win32
+        {b3ead768-e896-4d8c-bf0c-95ea8ee3d8c8}.Debug|Win32.Build.0 = Debug|Win32
+        {b3ead768-e896-4d8c-bf0c-95ea8ee3d8c8}.Release|Win32.ActiveCfg = Release|Win32
+        {b3ead768-e896-4d8c-bf0c-95ea8ee3d8c8}.Release|Win32.Build.0 = Release|Win32
+        {7c80eecd-29d5-4c68-b687-4d647d410d87}.Debug|Win32.ActiveCfg = Debug|Win32
+        {7c80eecd-29d5-4c68-b687-4d647d410d87}.Debug|Win32.Build.0 = Debug|Win32
+        {7c80eecd-29d5-4c68-b687-4d647d410d87}.Release|Win32.ActiveCfg = Release|Win32
+        {7c80eecd-29d5-4c68-b687-4d647d410d87}.Release|Win32.Build.0 = Release|Win32
+        {c9e5b075-3689-46be-b76b-5bc1829b1224}.Debug|Win32.ActiveCfg = Debug|Win32
+        {c9e5b075-3689-46be-b76b-5bc1829b1224}.Debug|Win32.Build.0 = Debug|Win32
+        {c9e5b075-3689-46be-b76b-5bc1829b1224}.Release|Win32.ActiveCfg = Release|Win32
+        {c9e5b075-3689-46be-b76b-5bc1829b1224}.Release|Win32.Build.0 = Release|Win32
+    EndGlobalSection
+EndGlobal
