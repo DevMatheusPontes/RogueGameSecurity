@@ -1,24 +1,20 @@
 #pragma once
 
+#include <string>
 #include <vector>
-#include <cstdint>
-#include <cstddef>
 
 namespace rgs::sdk::security {
 
-    /**
-     * @brief Computes the CRC32 hash of a data buffer.
-     * @param data The data to hash.
-     * @return The CRC32 hash.
-     */
-    uint32_t computeCrc32(const std::vector<std::byte>& data);
+class Hash {
+public:
+    // Gera SHA1 (20 bytes) em formato hexadecimal
+    static std::string sha1(const std::string& input);
 
-    /**
-     * @brief Verifies the CRC32 hash of a data buffer.
-     * @param data The data to verify.
-     * @param expectedCrc32 The expected CRC32 hash.
-     * @return True if the hash matches, false otherwise.
-     */
-    bool verifyCrc32(const std::vector<std::byte>& data, uint32_t expectedCrc32);
+    // Gera SHA256 (32 bytes) em formato hexadecimal
+    static std::string sha256(const std::string& input);
+
+private:
+    static std::string to_hex(const std::vector<unsigned char>& data);
+};
 
 } // namespace rgs::sdk::security

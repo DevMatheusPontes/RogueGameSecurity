@@ -1,31 +1,23 @@
 #pragma once
 
-#include <boost/property_tree/ptree.hpp>
 #include <string>
+#include <unordered_map>
 #include <optional>
+#include <boost/property_tree/ptree.hpp>
+#include <boost/property_tree/json_parser.hpp>
 
 namespace rgs::sdk::utils {
 
     class Config {
     public:
-        Config(const Config&) = delete;
-        Config& operator=(const Config&) = delete;
+        bool load(const std::string& filepath);
 
-        static Config& getInstance() {
-            static Config instance;
-            return instance;
-        }
-
-        bool load(const std::string& filename);
-
-        template<typename T> 
-        std::optional<T> get(const std::string& path) {
-            return m_tree.get_optional<T>(path);
-        }
+        std::optional<std::string> get_string(const std::string& key) const;
+        std::optional<int> get_int(const std::string& key) const;
+        std::optional<bool> get_bool(const std::string& key) const;
 
     private:
-        Config() = default;
-        boost::property_tree::ptree m_tree;
+        boost::property_tree::ptree tree_;
     };
 
 } // namespace rgs::sdk::utils

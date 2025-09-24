@@ -1,69 +1,54 @@
 #pragma once
 
-#include <windows.h>
+#include <cstdint>
 #include <vector>
 #include <optional>
-#include <cstdint>
+#include <string>
+#include <windows.h>
 
 namespace rgs::sdk::memory {
 
-    /**
-     * @brief Checks if a memory address is valid to be read.
-     * @param address The address to check.
-     * @param size The size of the memory block to check.
-     * @return True if the memory is readable, false otherwise.
-     */
-    bool isReadable(const void* address, size_t size = 1);
+class MemoryAccess {
+public:
+    // Leitura genérica
+    static std::optional<std::vector<uint8_t>> read(uintptr_t address, std::size_t size);
+    static std::optional<std::string> read_string(uintptr_t address, std::size_t max_len = 256);
 
-    /**
-     * @brief Reads a value of type T from a given memory address.
-     * @tparam T The type of the value to read.
-     * @param address The address to read from.
-     * @return An optional containing the value if successful, otherwise std::nullopt.
-     */
+    // Escrita genérica
+    static bool write(uintptr_t address, const std::vector<uint8_t>& data);
+    static bool write_string(uintptr_t address, const std::string& str);
+
+    // Tipos primitivos
+    static std::optional<uint8_t>  read_byte(uintptr_t address);
+    static std::optional<uint16_t> read_word(uintptr_t address);
+    static std::optional<uint32_t> read_dword(uintptr_t address);
+    static std::optional<uint64_t> read_qword(uintptr_t address);
+    static std::optional<float>    read_float(uintptr_t address);
+    static std::optional<double>   read_double(uintptr_t address);
+
+    static bool write_byte(uintptr_t address, uint8_t value);
+    static bool write_word(uintptr_t address, uint16_t value);
+    static bool write_dword(uintptr_t address, uint32_t value);
+    static bool write_qword(uintptr_t address, uint64_t value);
+    static bool write_float(uintptr_t address, float value);
+    static bool write_double(uintptr_t address, double value);
+
+    // Leitura/escrita com offset
     template<typename T>
-    std::optional<T> read(uintptr_t address) {
-        T value{};
-        if (!isReadable(reinterpret_cast<const void*>(address), sizeof(T))) {
-            return std::nullopt;
-        }
+    static std::optional<T> read_at(uintptr_t base, std::ptrdiff_t offset);
 
-        __try {
-            value = *reinterpret_cast<T*>(address);
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER) {
-            return std::nullopt;
-        }
-        return value;
-    }
-
-    /**
-     * @brief Writes a value of type T to a given memory address.
-     * @tparam T The type of the value to write.
-     * @param address The address to write to.
-     * @param value The value to write.
-     * @return True if the write was successful, false otherwise.
-     */
     template<typename T>
-    bool write(uintptr_t address, T value) {
-        DWORD oldProtect;
-        if (!VirtualProtect(reinterpret_cast<void*>(address), sizeof(T), PAGE_READWRITE, &oldProtect)) {
-            return false;
-        }
+    static bool write_at(uintptr_t base, std::ptrdiff_t offset, const T& value);
 
-        __try {
-            *reinterpret_cast<T*>(address) = value;
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER) {
-            VirtualProtect(reinterpret_cast<void*>(address), sizeof(T), oldProtect, &oldProtect);
-            return false;
-        }
+    static std::optional<std::string> read_string_at(uintptr_t base, std::ptrdiff_t offset, std::size_t max_len = 256);
+    static bool write_string_at(uintptr_t base, std::ptrdiff_t offset, const std::string& str);
 
-        VirtualProtect(reinterpret_cast<void*>(address), sizeof(T), oldProtect, &oldProtect);
-        return true;
-    }
+    // Templates genéricos
+    template<typename T>
+    static std::optional<T> read_value(uintptr_t address);
 
-    std::vector<std::byte> readBuffer(uintptr_t address, size_t size);
-    bool writeBuffer(uintptr_t address, const std::vector<std::byte>& data);
+    template<typename T>
+    static bool write_value(uintptr_t address, const T& value);
+};
 
 } // namespace rgs::sdk::memory

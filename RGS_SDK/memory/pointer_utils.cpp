@@ -3,14 +3,21 @@
 
 namespace rgs::sdk::memory {
 
-    uintptr_t resolvePointer(uintptr_t baseAddress, const std::vector<uintptr_t>& offsets) {
-        uintptr_t addr = baseAddress;
-        for (size_t i = 0; i < offsets.size(); ++i) {
-            auto readResult = read<uintptr_t>(addr);
-            if (!readResult) return 0;
-            addr = *readResult + offsets[i];
+std::optional<uintptr_t> PointerUtils::resolve_pointer_chain(uintptr_t base, const std::vector<std::ptrdiff_t>& offsets) {
+    uintptr_t current = base;
+
+    for (std::size_t i = 0; i < offsets.size(); ++i) {
+        current += offsets[i];
+
+        // Se não for o último, precisamos ler o ponteiro
+        if (i < offsets.size() - 1) {
+            auto next = MemoryAccess::read_value<uintptr_t>(current);
+            if (!next) return std::nullopt;
+            current = *next;
         }
-        return addr;
     }
+
+    return current;
+}
 
 } // namespace rgs::sdk::memory

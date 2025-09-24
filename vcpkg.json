@@ -14,6 +14,7 @@
     "boost-property-tree",
     "boost-serialization",
     "boost-test",
-    "minhook"
+    "minhook",
+    "openssl"
   ]
 }

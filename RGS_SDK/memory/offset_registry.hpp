@@ -1,35 +1,30 @@
 #pragma once
 
+#include <unordered_map>
 #include <string>
-#include <map>
-#include <cstdint>
 #include <optional>
+#include <cstdint>
 #include <mutex>
 
 namespace rgs::sdk::memory {
 
-    struct OffsetInfo {
-        std::string name;
-        uint32_t id;
-        std::string version;
-        uintptr_t address;
-    };
+class OffsetRegistry {
+public:
+    // Registra um offset com nome
+    void register_offset(const std::string& name, uintptr_t address);
 
-    class OffsetRegistry {
-    public:
-        static OffsetRegistry& getInstance();
+    // Obtém um offset por nome
+    std::optional<uintptr_t> get_offset(const std::string& name) const;
 
-        void registerOffset(const std::string& name, uint32_t id, const std::string& version, uintptr_t address);
-        
-        std::optional<uintptr_t> getOffset(uint32_t id);
-        std::optional<uintptr_t> getOffset(const std::string& name);
+    // Remove um offset
+    void unregister_offset(const std::string& name);
 
-    private:
-        OffsetRegistry() = default;
+    // Lista todos os offsets registrados
+    std::unordered_map<std::string, uintptr_t> list_all() const;
 
-        std::map<uint32_t, OffsetInfo> m_offsetsById;
-        std::map<std::string, OffsetInfo> m_offsetsByName;
-        mutable std::mutex m_mutex;
-    };
+private:
+    mutable std::mutex mutex_;
+    std::unordered_map<std::string, uintptr_t> offsets_;
+};
 
 } // namespace rgs::sdk::memory

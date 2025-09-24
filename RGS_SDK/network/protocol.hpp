@@ -1,60 +1,27 @@
 #pragma once
 
 #include <cstdint>
-#include <vector>
 
 namespace rgs::sdk::network {
 
-    // Protocol constants
-    constexpr uint32_t MAGIC_VALUE = 0x52475353;
-    constexpr uint16_t PROTOCOL_VERSION = 1;
+// 4 bytes assinatura para validar pacotes
+constexpr uint32_t MAGIC_VALUE = 'RGSS'; 
 
-    // Message types
-    enum class MessageType : uint16_t {
-        // Control messages
-        Handshake,
-        HandshakeResponse,
-        Heartbeat,
-        HeartbeatResponse,
-        Disconnect,
+// Tipos do protocolo (deve alinhar com ServiceCode)
+enum class MessageType : uint32_t {
+    HandshakeRequest = 1,
+    HandshakeAccept  = 2,
+    Data             = 3,
+    Ping             = 4,
+    Shutdown         = 5
+};
 
-        // Data messages
-        Telemetry,
-        Command,
-        PolicyUpdate,
-
-        // Keep last
-        Count
-    };
-
-    // Flags for the protocol header
-    enum class MessageFlags : uint16_t {
-        None = 0,
-        Encrypted = 1 << 0,
-        Compressed = 1 << 1,
-        HighPriority = 1 << 2,
-        HasHmac = 1 << 3,
-    };
-
-    #pragma pack(push, 1)
-    struct ProtocolHeader {
-        uint32_t magic;
-        uint16_t version;
-        MessageType type;
-        MessageFlags flags;
-        uint32_t length; // Length of the payload
-        uint64_t nonce;
-        uint32_t crc32;
-    };
-    #pragma pack(pop)
-
-    /**
-     * @brief Validates the protocol header.
-     * @param header The header to validate.
-     * @return True if the header is valid, false otherwise.
-     */
-    inline bool validateHeader(const ProtocolHeader& header) {
-        return header.magic == MAGIC_VALUE && header.version == PROTOCOL_VERSION;
-    }
+struct PacketHeader {
+    uint32_t magic;       // MAGIC_VALUE
+    uint32_t type;        // ServiceCode/MessageType
+    uint32_t length;      // tamanho do ciphertext
+    uint8_t  iv[12];      // IV/nonce único por pacote (AES-GCM)
+    uint8_t  tag[16];     // tag de autenticação GCM
+};
 
 } // namespace rgs::sdk::network

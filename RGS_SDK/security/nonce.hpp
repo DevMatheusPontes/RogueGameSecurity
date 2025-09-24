@@ -1,26 +1,26 @@
 #pragma once
 
+#include <vector>
 #include <cstdint>
-#include <mutex>
-#include <map>
-#include <boost/circular_buffer.hpp>
+#include <atomic>
 
 namespace rgs::sdk::security {
 
-    class NonceManager {
-    public:
-        static NonceManager& getInstance();
+// Gerador de IV único por sessão (12 bytes) para AES-GCM.
+// Estrutura: 4 bytes de prefixo aleatório + 8 bytes contador monotônico.
+class NonceGenerator {
+public:
+    NonceGenerator();
 
-        uint64_t newNonce();
-        bool isReplay(uint64_t sessionId, uint64_t nonce);
-        void cleanUp(); // To be called periodically
+    // Próximo IV (12 bytes)
+    std::vector<uint8_t> next_iv();
 
-    private:
-        NonceManager() = default;
+    // Reinicia contador (mantém prefixo)
+    void reset();
 
-        // Map session ID to a circular buffer of recent nonces
-        std::map<uint64_t, boost::circular_buffer<uint64_t>> m_sessionNonces;
-        mutable std::mutex m_mutex;
-    };
+private:
+    uint32_t prefix_;           // aleatório por instância
+    std::atomic<uint64_t> ctr_; // contador monotônico por sessão
+};
 
 } // namespace rgs::sdk::security

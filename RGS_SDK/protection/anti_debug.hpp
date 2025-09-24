@@ -1,25 +1,39 @@
 #pragma once
 
 #include <windows.h>
+#include <tlhelp32.h>
 #include <vector>
 #include <string>
 #include <optional>
 
 namespace rgs::sdk::protection {
 
+    // Tipos de debugger possíveis
     enum class DebuggerType {
         Unknown,
-        UserMode,
+        UserModeAPI,
+        UserModePEB,
+        UserModeGlobalFlag,
+        UserModeHeap,
+        UserModePort,
+        UserModeObject,
+        UserModeCPUID,
+        UserModeTiming,
+        UserModeTrap,
+        UserModeWindow,
+        UserModeProcess,
         KernelMode,
+        Hypervisor,
         Remote,
         Hardware
     };
 
+    // Resultado de cada técnica
     struct DebugDetection {
-        DebuggerType type;
-        std::string method;
-        std::string description;
-        bool isActive;
+        DebuggerType   type;
+        std::string    method;
+        std::string    description;
+        bool           isActive;
     };
 
     class AntiDebug {
@@ -27,60 +41,54 @@ namespace rgs::sdk::protection {
         AntiDebug();
         ~AntiDebug();
 
-        // Initialize anti-debug protection
+        // Inicializa / encerra o módulo
         bool initialize();
         void shutdown();
 
-        // Main detection methods
+        // Executa todas as verificações e retorna uma lista de detecções
         std::vector<DebugDetection> scanForDebuggers();
+
+        // Retorna true se alguma técnica detectou debugger
         bool isBeingDebugged();
-        
-        // Specific detection methods
-        bool detectPEB();
-        bool detectNtGlobalFlag();
-        bool detectHeapFlags();
-        bool detectDebugPort();
-        bool detectDebugObject();
-        bool detectHardwareBreakpoints();
-        bool detectSoftwareBreakpoints();
-        bool detectTiming();
-        bool detectExceptions();
-        bool detectRemoteDebugger();
-        
-        // Anti-debugging techniques
-        void hideFromDebugger();
-        void patchDebuggerDetection();
-        void enableAntiAttach();
-        
-        // Breakpoint detection and removal
-        bool scanForBreakpoints();
-        void removeBreakpoints();
-        
-        // Configuration
+
+        // Habilita / desabilita checagens em tempo de execução
         void setProtectionEnabled(bool enabled);
         bool isProtectionEnabled() const;
 
+        // Técnicas de evasão / resposta
+        void hideFromDebugger();
+        void patchDebuggerAPIs();
+        void disableDebugPrivileges();
+
     private:
-        // Internal detection methods
-        bool checkDebuggerPresent();
-        bool checkRemoteDebuggerPresent();
-        bool checkKernelDebugger();
-        bool scanMemoryForBreakpoints();
-        
-        // Anti-debugging helpers
-        void patchIsDebuggerPresent();
-        void patchCheckRemoteDebuggerPresent();
-        void patchNtQueryInformationProcess();
-        
-        // Timing checks
-        bool performTimingCheck();
-        DWORD measureExecutionTime();
-        
-        // Exception handling
-        bool testExceptionHandling();
-        
-        bool m_protectionEnabled = true;
-        bool m_initialized = false;
+        bool m_initialized   = false;
+        bool m_enabled       = true;
+
+        // Métodos de detecção
+        bool checkIsDebuggerPresent();                        // API
+        bool checkRemoteDebuggerPresent();                    // API
+        bool detectPEBBeingDebugged();                        // PEB flag
+        bool detectPEBNtGlobalFlag();                         // PEB NtGlobalFlag
+        bool detectHeapFlags();                               // Heap flags
+        bool detectDebugPort();                               // NtQueryInformationProcess DebugPort
+        bool detectDebugObject();                             // NtQueryInformationProcess DebugObject
+        bool detectKernelDebugger();                          // NtQuerySystemInformation
+        bool detectHardwareBreakpoints();                     // Dr0–Dr3
+        bool detectSoftwareBreakpoints();                     // INT3 scan
+        bool detectTimingAnomaly();                           // Loop timing
+        bool detectOutputDebugStringTrap();                   // OutputDebugString exception
+        bool detectDebuggerWindows();                         // Janela de debuggers
+        bool detectDebuggerProcesses();                       // Processo de debuggers
+        bool detectHypervisor();                              // CPUID hypervisor bit
+        bool detectStealthHooks();                            // IAT/EAT inline hooks, SSDT/EAT
+        bool detectIDTIntegrity();                            // IDT checksum
+
+        // Helpers de evasão
+        void patchAPI(const char* module, const char* func);
+        bool adjustPrivilege(const wchar_t* priv, bool enable);
+
+        // Medição de tempo
+        DWORD measureLoopTime(size_t iterations = 1000000);
     };
 
 } // namespace rgs::sdk::protection

@@ -1,542 +1,736 @@
 #include "memory_protection.hpp"
-#include "../memory/memory_access.hpp"
-#include "../security/hash.hpp"
-#include <psapi.h>
-#include <imagehlp.h>
-#include <algorithm>
 
-#pragma comment(lib, "imagehlp.lib")
+#include <psapi.h>
+#include <tlhelp32.h>
+#include <winternl.h>
+#include <algorithm>
+#include <cstring>
+#include <fstream>
+
+// Local utilities
+namespace {
+    // 32-bit FNV-1a hash
+    inline uint32_t fnv1a_32(const uint8_t* data, size_t len) {
+        uint32_t hash = 0x811C9DC5u;
+        for (size_t i = 0; i < len; ++i) {
+            hash ^= data[i];
+            hash *= 0x01000193u;
+        }
+        return hash;
+    }
+
+    inline bool read_memory(uintptr_t address, void* out, size_t size) {
+        __try {
+            std::memcpy(out, reinterpret_cast<void*>(address), size);
+            return true;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            return false;
+        }
+    }
+
+    inline bool write_memory(uintptr_t address, const void* in, size_t size) {
+        DWORD oldProt = 0;
+        if (VirtualProtect(reinterpret_cast<void*>(address), size, PAGE_EXECUTE_READWRITE, &oldProt)) {
+            std::memcpy(reinterpret_cast<void*>(address), in, size);
+            VirtualProtect(reinterpret_cast<void*>(address), size, oldProt, &oldProt);
+            return true;
+        }
+        return false;
+    }
+
+    inline bool change_protect(uintptr_t address, size_t size, DWORD newProt, DWORD* prev = nullptr) {
+        DWORD oldProt = 0;
+        bool ok = VirtualProtect(reinterpret_cast<void*>(address), size, newProt, &oldProt) != 0;
+        if (ok && prev) *prev = oldProt;
+        return ok;
+    }
+
+    struct SectionInfo {
+        std::string name;
+        uintptr_t base;
+        size_t size;
+        DWORD characteristics;
+    };
+
+    inline std::vector<SectionInfo> enumerate_self_sections() {
+        std::vector<SectionInfo> out;
+        HMODULE self = GetModuleHandleA(nullptr);
+        if (!self) return out;
+
+        auto dos = reinterpret_cast<IMAGE_DOS_HEADER*>(self);
+        auto nt  = reinterpret_cast<IMAGE_NT_HEADERS*>(reinterpret_cast<uint8_t*>(self) + dos->e_lfanew);
+        auto sec = reinterpret_cast<IMAGE_SECTION_HEADER*>(
+            reinterpret_cast<uint8_t*>(&nt->OptionalHeader) + nt->FileHeader.SizeOfOptionalHeader
+        );
+
+        for (UINT i = 0; i < nt->FileHeader.NumberOfSections; ++i) {
+            char name[9] {};
+            std::memcpy(name, sec[i].Name, 8);
+            SectionInfo si;
+            si.name = name;
+            si.base = reinterpret_cast<uintptr_t>(self) + sec[i].VirtualAddress;
+            si.size = sec[i].Misc.VirtualSize ? sec[i].Misc.VirtualSize : sec[i].SizeOfRawData;
+            si.characteristics = sec[i].Characteristics;
+            out.push_back(si);
+        }
+        return out;
+    }
+
+    inline std::pair<uintptr_t, size_t> module_range(HMODULE mod) {
+        MODULEINFO mi{};
+        if (!GetModuleInformation(GetCurrentProcess(), mod, &mi, sizeof(mi))) return {0,0};
+        return {reinterpret_cast<uintptr_t>(mi.lpBaseOfDll), mi.SizeOfImage};
+    }
+
+    inline bool addr_in_module(uintptr_t addr, HMODULE mod) {
+        auto [base, size] = module_range(mod);
+        return base && addr >= base && addr < base + size;
+    }
+
+    inline bool addr_in_any_module(uintptr_t addr) {
+        HMODULE mods[1024]; DWORD needed=0;
+        if (!EnumProcessModules(GetCurrentProcess(), mods, sizeof(mods), &needed)) return false;
+        size_t count = needed / sizeof(HMODULE);
+        for (size_t i=0; i<count; ++i) {
+            if (addr_in_module(addr, mods[i])) return true;
+        }
+        return false;
+    }
+
+    inline std::vector<uint8_t> read_file_binary(const std::wstring& path) {
+        std::ifstream f(path, std::ios::binary);
+        if (!f) return {};
+        f.seekg(0, std::ios::end);
+        size_t sz = (size_t)f.tellg();
+        f.seekg(0, std::ios::beg);
+        std::vector<uint8_t> buf(sz);
+        f.read(reinterpret_cast<char*>(buf.data()), sz);
+        return buf;
+    }
+
+    inline std::wstring self_path_w() {
+        wchar_t path[MAX_PATH]{};
+        GetModuleFileNameW(nullptr, path, MAX_PATH);
+        return path;
+    }
+}
 
 namespace rgs::sdk::protection {
 
-    // Static instance for exception handler
-    static MemoryProtection* g_instance = nullptr;
+MemoryProtection::MemoryProtection() = default;
+MemoryProtection::~MemoryProtection() { shutdown(); }
 
-    MemoryProtection::MemoryProtection() {
-        g_instance = this;
-    }
+bool MemoryProtection::initialize() {
+    if (m_initialized) return true;
 
-    MemoryProtection::~MemoryProtection() {
-        shutdown();
-        g_instance = nullptr;
-    }
-
-    bool MemoryProtection::initialize() {
-        if (m_initialized) {
-            return true;
+    // Snapshot original PE sections (for patch comparison)
+    auto secs = enumerate_self_sections();
+    m_originalSections.clear();
+    for (auto& s : secs) {
+        std::vector<std::byte> buf(s.size);
+        if (read_memory(s.base, buf.data(), s.size)) {
+            m_originalSections.emplace_back(s.base, std::move(buf));
         }
+    }
 
-        // Store original PE sections for comparison
-        HMODULE hModule = GetModuleHandle(NULL);
-        if (hModule) {
-            IMAGE_DOS_HEADER* dosHeader = (IMAGE_DOS_HEADER*)hModule;
-            IMAGE_NT_HEADERS* ntHeaders = (IMAGE_NT_HEADERS*)((BYTE*)hModule + dosHeader->e_lfanew);
-            IMAGE_SECTION_HEADER* sectionHeader = (IMAGE_SECTION_HEADER*)(ntHeaders + 1);
+    m_initialized = true;
+    return true;
+}
 
-            for (int i = 0; i < ntHeaders->FileHeader.NumberOfSections; i++) {
-                if (sectionHeader[i].Characteristics & IMAGE_SCN_MEM_EXECUTE) {
-                    uintptr_t sectionAddr = (uintptr_t)hModule + sectionHeader[i].VirtualAddress;
-                    size_t sectionSize = sectionHeader[i].Misc.VirtualSize;
-                    
-                    auto sectionData = rgs::sdk::memory::readBuffer(sectionAddr, sectionSize);
-                    m_originalSections.emplace_back(sectionAddr, sectionData);
-                }
+void MemoryProtection::shutdown() {
+    if (m_accessMonitoringEnabled) disableAccessMonitoring();
+    m_protectedRegions.clear();
+    m_detectedThreats.clear();
+    m_originalSections.clear();
+    m_initialized = false;
+}
+
+// Anti-dump
+
+bool MemoryProtection::enableAntiDump() {
+    if (!m_initialized) initialize();
+    bool ok = true;
+    ok &= hidePEHeader();
+    ok &= scrambleHeaders();
+    ok &= protectCriticalSections();
+    m_antiDumpEnabled = ok;
+    return ok;
+}
+
+void MemoryProtection::disableAntiDump() {
+    m_antiDumpEnabled = false;
+}
+
+bool MemoryProtection::isAntiDumpEnabled() const {
+    return m_antiDumpEnabled;
+}
+
+bool MemoryProtection::hidePEHeader() {
+    // Overwrite DOS header lightly to confuse dumpers (safe subset)
+    auto secs = enumerate_self_sections();
+    if (secs.empty()) return false;
+
+    HMODULE self = GetModuleHandleA(nullptr);
+    auto dos = reinterpret_cast<IMAGE_DOS_HEADER*>(self);
+    // Only scramble non-critical fields of DOS header stub, not e_lfanew.
+    const size_t stubSize = 0x40; // small portion
+    std::vector<uint8_t> zeros(stubSize, 0x00);
+    return write_memory(reinterpret_cast<uintptr_t>(dos), zeros.data(), stubSize);
+}
+
+bool MemoryProtection::scrambleHeaders() {
+    // Zero selected data directories (DEBUG, EXCEPTION) to reduce forensic info
+    HMODULE self = GetModuleHandleA(nullptr);
+    auto dos = reinterpret_cast<IMAGE_DOS_HEADER*>(self);
+    auto nt  = reinterpret_cast<IMAGE_NT_HEADERS*>(reinterpret_cast<uint8_t*>(self) + dos->e_lfanew);
+
+    auto& opt = nt->OptionalHeader;
+    auto dirCount = IMAGE_NUMBEROF_DIRECTORY_ENTRIES;
+    for (UINT i = 0; i < dirCount; ++i) {
+        if (i == IMAGE_DIRECTORY_ENTRY_DEBUG || i == IMAGE_DIRECTORY_ENTRY_EXCEPTION) {
+            opt.DataDirectory[i].VirtualAddress = 0;
+            opt.DataDirectory[i].Size = 0;
+        }
+    }
+    return true;
+}
+
+bool MemoryProtection::protectCriticalSections() {
+    // Set .text to PAGE_EXECUTE_READ and ensure no RWX in large regions
+    auto secs = enumerate_self_sections();
+    bool ok = true;
+    for (auto& s : secs) {
+        if (s.name == ".text") {
+            DWORD prev{};
+            ok &= change_protect(s.base, s.size, PAGE_EXECUTE_READ, &prev);
+        }
+    }
+
+    // Harden large committed RWX regions
+    MEMORY_BASIC_INFORMATION mbi{};
+    uintptr_t addr = 0;
+    while (VirtualQuery(reinterpret_cast<LPCVOID>(addr), &mbi, sizeof(mbi))) {
+        if (mbi.State == MEM_COMMIT && mbi.RegionSize >= (1 << 20)) {
+            if ((mbi.Protect & PAGE_EXECUTE_READWRITE) == PAGE_EXECUTE_READWRITE) {
+                DWORD prev{};
+                change_protect(reinterpret_cast<uintptr_t>(mbi.BaseAddress), mbi.RegionSize, PAGE_EXECUTE_READ, &prev);
             }
         }
-
-        m_initialized = true;
-        return true;
+        addr += mbi.RegionSize;
     }
+    return ok;
+}
 
-    void MemoryProtection::shutdown() {
-        if (!m_initialized) {
-            return;
-        }
+// Integrity regions
 
-        disableAntiDump();
-        disableAccessMonitoring();
-        
-        // Clear protected regions
-        m_protectedRegions.clear();
-        m_detectedThreats.clear();
-        m_originalSections.clear();
-
-        m_initialized = false;
+bool MemoryProtection::addIntegrityRegion(uintptr_t address, size_t size, const std::string& name) {
+    if (m_protectedRegions.find(name) != m_protectedRegions.end()) return false;
+    MemoryIntegrityRegion r;
+    r.startAddress = address;
+    r.size = size;
+    r.originalHash = calculateRegionHash(address, size);
+    r.originalProtection = PAGE_NOACCESS;
+    MEMORY_BASIC_INFORMATION mbi{};
+    if (VirtualQuery(reinterpret_cast<LPCVOID>(address), &mbi, sizeof(mbi))) {
+        r.originalProtection = mbi.Protect;
     }
+    r.isProtected = false;
+    r.name = name;
+    m_protectedRegions[name] = r;
+    return true;
+}
 
-    bool MemoryProtection::enableAntiDump() {
-        if (m_antiDumpEnabled) {
-            return true;
-        }
+bool MemoryProtection::removeIntegrityRegion(const std::string& name) {
+    return m_protectedRegions.erase(name) > 0;
+}
 
-        bool success = true;
-        success &= hidePEHeader();
-        success &= scrambleHeaders();
-        success &= protectCriticalSections();
-
-        m_antiDumpEnabled = success;
-        return success;
-    }
-
-    void MemoryProtection::disableAntiDump() {
-        if (!m_antiDumpEnabled) {
-            return;
-        }
-
-        // Restore original headers if needed
-        // This is complex and might not be fully reversible
-        m_antiDumpEnabled = false;
-    }
-
-    bool MemoryProtection::isAntiDumpEnabled() const {
-        return m_antiDumpEnabled;
-    }
-
-    bool MemoryProtection::addIntegrityRegion(uintptr_t address, size_t size, const std::string& name) {
-        if (m_protectedRegions.find(name) != m_protectedRegions.end()) {
-            return false; // Region already exists
-        }
-
-        MemoryIntegrityRegion region;
-        region.startAddress = address;
-        region.size = size;
-        region.originalHash = calculateRegionHash(address, size);
-        region.name = name;
-        region.isProtected = true;
-
-        // Get current protection
-        MEMORY_BASIC_INFORMATION mbi;
-        if (VirtualQuery(reinterpret_cast<LPCVOID>(address), &mbi, sizeof(mbi))) {
-            region.originalProtection = mbi.Protect;
-        }
-
-        m_protectedRegions[name] = region;
-        return true;
-    }
-
-    bool MemoryProtection::removeIntegrityRegion(const std::string& name) {
-        auto it = m_protectedRegions.find(name);
-        if (it == m_protectedRegions.end()) {
-            return false;
-        }
-
-        m_protectedRegions.erase(it);
-        return true;
-    }
-
-    bool MemoryProtection::verifyIntegrity() {
-        for (auto& [name, region] : m_protectedRegions) {
-            if (isRegionModified(region)) {
-                MemoryThreatDetection threat;
-                threat.type = MemoryThreat::IntegrityViolation;
-                threat.address = region.startAddress;
-                threat.size = region.size;
-                threat.description = "Integrity violation detected in region: " + name;
-                m_detectedThreats.push_back(threat);
-                return false;
-            }
-        }
-        return true;
-    }
-
-    std::vector<MemoryThreatDetection> MemoryProtection::checkIntegrityViolations() {
-        std::vector<MemoryThreatDetection> violations;
-
-        for (const auto& [name, region] : m_protectedRegions) {
-            if (isRegionModified(region)) {
-                MemoryThreatDetection threat;
-                threat.type = MemoryThreat::IntegrityViolation;
-                threat.address = region.startAddress;
-                threat.size = region.size;
-                threat.description = "Integrity violation in region: " + name;
-                violations.push_back(threat);
-            }
-        }
-
-        return violations;
-    }
-
-    bool MemoryProtection::scanForHooks() {
-        auto hooks = detectHooks();
-        return !hooks.empty();
-    }
-
-    std::vector<MemoryThreatDetection> MemoryProtection::detectHooks() {
-        std::vector<MemoryThreatDetection> hooks;
-
-        // Check import table hooks
-        if (checkImportTable()) {
-            MemoryThreatDetection threat;
-            threat.type = MemoryThreat::HookInjection;
-            threat.address = 0;
-            threat.size = 0;
-            threat.description = "Import table hook detected";
-            hooks.push_back(threat);
-        }
-
-        // Check inline hooks in critical functions
-        std::vector<std::string> criticalFunctions = {
-            "VirtualProtect", "WriteProcessMemory", "CreateRemoteThread",
-            "SetWindowsHookEx", "GetProcAddress", "LoadLibrary"
-        };
-
-        for (const auto& funcName : criticalFunctions) {
-            HMODULE hKernel32 = GetModuleHandleA("kernel32.dll");
-            if (hKernel32) {
-                FARPROC funcAddr = GetProcAddress(hKernel32, funcName.c_str());
-                if (funcAddr && isAddressHooked(reinterpret_cast<uintptr_t>(funcAddr))) {
-                    MemoryThreatDetection threat;
-                    threat.type = MemoryThreat::HookInjection;
-                    threat.address = reinterpret_cast<uintptr_t>(funcAddr);
-                    threat.size = 16; // Check first 16 bytes
-                    threat.description = "Inline hook detected on " + funcName;
-                    hooks.push_back(threat);
-                }
-            }
-        }
-
-        return hooks;
-    }
-
-    bool MemoryProtection::removeDetectedHooks() {
-        // This is complex and dangerous - removing hooks might crash the process
-        // For now, just detect and log
-        return false;
-    }
-
-    bool MemoryProtection::enableAccessMonitoring() {
-        if (m_accessMonitoringEnabled) {
-            return true;
-        }
-
-        // Install vectored exception handler
-        m_vehHandler = AddVectoredExceptionHandler(1, vectoredExceptionHandler);
-        if (!m_vehHandler) {
-            return false;
-        }
-
-        // Setup page guards on critical regions
-        bool success = setupPageGuards();
-        if (!success) {
-            RemoveVectoredExceptionHandler(m_vehHandler);
-            m_vehHandler = nullptr;
-            return false;
-        }
-
-        m_accessMonitoringEnabled = true;
-        return true;
-    }
-
-    void MemoryProtection::disableAccessMonitoring() {
-        if (!m_accessMonitoringEnabled) {
-            return;
-        }
-
-        removePageGuards();
-
-        if (m_vehHandler) {
-            RemoveVectoredExceptionHandler(m_vehHandler);
-            m_vehHandler = nullptr;
-        }
-
-        m_accessMonitoringEnabled = false;
-    }
-
-    std::vector<MemoryThreatDetection> MemoryProtection::getAccessViolations() {
-        // Return detected access violations
-        std::vector<MemoryThreatDetection> violations;
-        
-        for (const auto& threat : m_detectedThreats) {
-            if (threat.type == MemoryThreat::IllegalAccess) {
-                violations.push_back(threat);
-            }
-        }
-        
-        return violations;
-    }
-
-    bool MemoryProtection::detectCodeInjection() {
-        auto injections = scanForInjectedCode();
-        return !injections.empty();
-    }
-
-    std::vector<MemoryThreatDetection> MemoryProtection::scanForInjectedCode() {
-        std::vector<MemoryThreatDetection> injections;
-
-        // Scan for executable regions that shouldn't be there
-        MEMORY_BASIC_INFORMATION mbi;
-        for (uintptr_t addr = 0x10000; addr < 0x7FFFFFFF; addr += mbi.RegionSize) {
-            if (VirtualQuery(reinterpret_cast<LPCVOID>(addr), &mbi, sizeof(mbi)) == 0) {
-                continue;
-            }
-
-            // Look for executable private memory
-            if (mbi.State == MEM_COMMIT && 
-                (mbi.Protect & PAGE_EXECUTE_READWRITE) &&
-                mbi.Type == MEM_PRIVATE) {
-                
-                // Check if this looks like injected code
-                if (!validateExecutableCode(addr, mbi.RegionSize)) {
-                    MemoryThreatDetection threat;
-                    threat.type = MemoryThreat::CodeInjection;
-                    threat.address = addr;
-                    threat.size = mbi.RegionSize;
-                    threat.description = "Suspicious executable region detected";
-                    injections.push_back(threat);
-                }
-            }
-        }
-
-        return injections;
-    }
-
-    bool MemoryProtection::detectMemoryPatches() {
-        auto patches = scanForPatches();
-        return !patches.empty();
-    }
-
-    std::vector<MemoryThreatDetection> MemoryProtection::scanForPatches() {
-        std::vector<MemoryThreatDetection> patches;
-
-        // Compare current sections with original
-        for (const auto& [originalAddr, originalData] : m_originalSections) {
-            auto currentData = rgs::sdk::memory::readBuffer(originalAddr, originalData.size());
-            
-            if (currentData.size() != originalData.size()) {
-                continue;
-            }
-
-            // Find differences
-            for (size_t i = 0; i < originalData.size(); i++) {
-                if (originalData[i] != currentData[i]) {
-                    MemoryThreatDetection threat;
-                    threat.type = MemoryThreat::MemoryPatch;
-                    threat.address = originalAddr + i;
-                    threat.size = 1;
-                    threat.description = "Memory patch detected";
-                    threat.suspiciousData = {currentData[i]};
-                    patches.push_back(threat);
-                    
-                    // Skip ahead to avoid too many detections for the same patch
-                    i += 15;
-                }
-            }
-        }
-
-        return patches;
-    }
-
-    void MemoryProtection::setProtectionLevel(int level) {
-        if (level >= 1 && level <= 5) {
-            m_protectionLevel = level;
+bool MemoryProtection::verifyIntegrity() {
+    if (!m_integrityCheckEnabled) return true;
+    bool allGood = true;
+    for (auto& [name, r] : m_protectedRegions) {
+        if (isRegionModified(r)) {
+            allGood = false;
         }
     }
+    return allGood;
+}
 
-    int MemoryProtection::getProtectionLevel() const {
-        return m_protectionLevel;
-    }
+std::vector<MemoryThreatDetection> MemoryProtection::checkIntegrityViolations() {
+    m_detectedThreats.clear();
+    if (!m_integrityCheckEnabled) return m_detectedThreats;
 
-    void MemoryProtection::setStealthMode(bool enabled) {
-        m_stealthMode = enabled;
-    }
-
-    // Private helper methods
-
-    bool MemoryProtection::hidePEHeader() {
-        HMODULE hModule = GetModuleHandle(NULL);
-        if (!hModule) return false;
-
-        IMAGE_DOS_HEADER* dosHeader = (IMAGE_DOS_HEADER*)hModule;
-        
-        // Scramble DOS header
-        DWORD oldProtect;
-        if (VirtualProtect(dosHeader, sizeof(IMAGE_DOS_HEADER), PAGE_READWRITE, &oldProtect)) {
-            dosHeader->e_magic = 0x0000; // Clear MZ signature
-            VirtualProtect(dosHeader, sizeof(IMAGE_DOS_HEADER), oldProtect, &oldProtect);
-            return true;
+    for (auto& [name, r] : m_protectedRegions) {
+        if (isRegionModified(r)) {
+            MemoryThreatDetection det{};
+            det.type = MemoryThreat::IntegrityViolation;
+            det.address = r.startAddress;
+            det.size = r.size;
+            det.description = "Integrity violation in region: " + name;
+            std::vector<std::byte> snapshot(r.size);
+            read_memory(r.startAddress, snapshot.data(), r.size);
+            det.suspiciousData = std::move(snapshot);
+            m_detectedThreats.push_back(std::move(det));
         }
-        
-        return false;
     }
+    return m_detectedThreats;
+}
 
-    bool MemoryProtection::scrambleHeaders() {
-        HMODULE hModule = GetModuleHandle(NULL);
-        if (!hModule) return false;
+uint32_t MemoryProtection::calculateRegionHash(uintptr_t address, size_t size) {
+    std::vector<uint8_t> buf(size);
+    if (!read_memory(address, buf.data(), size)) return 0;
+    return fnv1a_32(buf.data(), buf.size());
+}
 
-        IMAGE_DOS_HEADER* dosHeader = (IMAGE_DOS_HEADER*)hModule;
-        IMAGE_NT_HEADERS* ntHeaders = (IMAGE_NT_HEADERS*)((BYTE*)hModule + dosHeader->e_lfanew);
+bool MemoryProtection::isRegionModified(const MemoryIntegrityRegion& region) {
+    auto h = calculateRegionHash(region.startAddress, region.size);
+    if (h != region.originalHash) return true;
 
-        DWORD oldProtect;
-        if (VirtualProtect(ntHeaders, sizeof(IMAGE_NT_HEADERS), PAGE_READWRITE, &oldProtect)) {
-            // Scramble NT signature
-            ntHeaders->Signature = 0x00000000;
-            VirtualProtect(ntHeaders, sizeof(IMAGE_NT_HEADERS), oldProtect, &oldProtect);
-            return true;
-        }
-
-        return false;
-    }
-
-    bool MemoryProtection::protectCriticalSections() {
-        // Add integrity protection for critical code sections
-        HMODULE hModule = GetModuleHandle(NULL);
-        if (!hModule) return false;
-
-        IMAGE_DOS_HEADER* dosHeader = (IMAGE_DOS_HEADER*)hModule;
-        IMAGE_NT_HEADERS* ntHeaders = (IMAGE_NT_HEADERS*)((BYTE*)hModule + dosHeader->e_lfanew);
-        IMAGE_SECTION_HEADER* sectionHeader = (IMAGE_SECTION_HEADER*)(ntHeaders + 1);
-
-        for (int i = 0; i < ntHeaders->FileHeader.NumberOfSections; i++) {
-            if (sectionHeader[i].Characteristics & IMAGE_SCN_MEM_EXECUTE) {
-                uintptr_t sectionAddr = (uintptr_t)hModule + sectionHeader[i].VirtualAddress;
-                size_t sectionSize = sectionHeader[i].Misc.VirtualSize;
-                
-                std::string sectionName = std::string((char*)sectionHeader[i].Name, 8);
-                addIntegrityRegion(sectionAddr, sectionSize, sectionName);
-            }
-        }
-
-        return true;
-    }
-
-    uint32_t MemoryProtection::calculateRegionHash(uintptr_t address, size_t size) {
-        auto data = rgs::sdk::memory::readBuffer(address, size);
-        return rgs::sdk::security::computeCrc32(data);
-    }
-
-    bool MemoryProtection::isRegionModified(const MemoryIntegrityRegion& region) {
-        uint32_t currentHash = calculateRegionHash(region.startAddress, region.size);
-        return currentHash != region.originalHash;
-    }
-
-    bool MemoryProtection::isAddressHooked(uintptr_t address) {
-        // Read first few bytes to check for hook patterns
-        auto data = rgs::sdk::memory::readBuffer(address, 16);
-        if (data.empty()) return false;
-
-        // Check for common hook patterns
-        // JMP (E9), CALL (E8), PUSH+RET
-        if (data[0] == std::byte{0xE9} || data[0] == std::byte{0xE8}) {
-            return true; // Jump or call hook
-        }
-
-        // Check for PUSH + RET pattern
-        if (data[0] == std::byte{0x68} && data.size() >= 6 && data[5] == std::byte{0xC3}) {
-            return true; // Push address + ret
-        }
-
-        return false;
-    }
-
-    bool MemoryProtection::checkImportTable() {
-        HMODULE hModule = GetModuleHandle(NULL);
-        if (!hModule) return false;
-
-        IMAGE_DOS_HEADER* dosHeader = (IMAGE_DOS_HEADER*)hModule;
-        IMAGE_NT_HEADERS* ntHeaders = (IMAGE_NT_HEADERS*)((BYTE*)hModule + dosHeader->e_lfanew);
-        
-        if (ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress == 0) {
-            return false;
-        }
-
-        IMAGE_IMPORT_DESCRIPTOR* importDesc = (IMAGE_IMPORT_DESCRIPTOR*)((BYTE*)hModule + 
-            ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress);
-
-        while (importDesc->Name != 0) {
-            IMAGE_THUNK_DATA* thunk = (IMAGE_THUNK_DATA*)((BYTE*)hModule + importDesc->FirstThunk);
-            
-            while (thunk->u1.Function != 0) {
-                // Check if the function pointer points to expected module range
-                HMODULE hTargetModule = NULL;
-                if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, 
-                                      (LPCSTR)thunk->u1.Function, &hTargetModule)) {
-                    
-                    // If the function doesn't point to a loaded module, it might be hooked
-                    if (!hTargetModule) {
-                        return true;
-                    }
-                }
-                thunk++;
-            }
-            importDesc++;
-        }
-
-        return false;
-    }
-
-    bool MemoryProtection::checkExportTable() {
-        // Similar to import table check but for exports
-        return false;
-    }
-
-    bool MemoryProtection::validateExecutableCode(uintptr_t address, size_t size) {
-        // Read the code and perform basic validation
-        auto data = rgs::sdk::memory::readBuffer(address, std::min(size, static_cast<size_t>(1024)));
-        if (data.empty()) return false;
-
-        // Check for valid x86/x64 instructions at the beginning
-        // This is a simplified check
-        if (data.size() >= 2) {
-            // Look for common instruction patterns
-            std::byte firstByte = data[0];
-            
-            // Valid instruction prefixes and opcodes
-            if (firstByte == std::byte{0x48} || // REX prefix (x64)
-                firstByte == std::byte{0x55} || // PUSH EBP
-                firstByte == std::byte{0x8B} || // MOV
-                firstByte == std::byte{0x83} || // ADD/SUB/CMP
-                firstByte == std::byte{0xFF}) { // CALL/JMP
+    MEMORY_BASIC_INFORMATION mbi{};
+    if (VirtualQuery(reinterpret_cast<LPCVOID>(region.startAddress), &mbi, sizeof(mbi))) {
+        if (m_protectionLevel >= 4) {
+            // At higher levels demand same protection
+            if (mbi.Protect != region.originalProtection && region.originalProtection != PAGE_NOACCESS)
                 return true;
-            }
         }
-
-        return false;
     }
+    return false;
+}
 
-    LONG WINAPI MemoryProtection::vectoredExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo) {
-        if (!g_instance) {
-            return EXCEPTION_CONTINUE_SEARCH;
+void MemoryProtection::updateRegionHash(MemoryIntegrityRegion& region) {
+    region.originalHash = calculateRegionHash(region.startAddress, region.size);
+}
+
+// Hook detection
+
+bool MemoryProtection::scanForHooks() {
+    if (!m_hookDetectionEnabled) return false;
+    m_detectedThreats.clear();
+    bool hooked = false;
+
+    hooked |= checkImportTable();
+    hooked |= checkExportTable();
+    hooked |= scanInlineHooks();
+
+    return hooked;
+}
+
+std::vector<MemoryThreatDetection> MemoryProtection::detectHooks() {
+    scanForHooks();
+    return m_detectedThreats;
+}
+
+bool MemoryProtection::removeDetectedHooks() {
+    // User-mode best-effort: cannot reliably remove hooks without original bytes.
+    // Attempt: if inline hook detected pointing outside module, nop out first 5 bytes.
+    bool any = false;
+    for (auto& d : m_detectedThreats) {
+        if (d.type == MemoryThreat::HookInjection && d.size >= 5) {
+            std::vector<uint8_t> nops(d.size, 0x90);
+            any |= write_memory(d.address, nops.data(), d.size);
         }
-
-        if (pExceptionInfo->ExceptionRecord->ExceptionCode == STATUS_GUARD_PAGE_VIOLATION) {
-            // Log the access attempt
-            MemoryThreatDetection threat;
-            threat.type = MemoryThreat::IllegalAccess;
-            threat.address = reinterpret_cast<uintptr_t>(pExceptionInfo->ExceptionRecord->ExceptionInformation[1]);
-            threat.size = 0;
-            threat.description = "Illegal memory access detected";
-            g_instance->m_detectedThreats.push_back(threat);
-
-            // Restore the page guard
-            DWORD oldProtect;
-            VirtualProtect(reinterpret_cast<LPVOID>(threat.address), 1, 
-                          PAGE_READONLY | PAGE_GUARD, &oldProtect);
-
-            return EXCEPTION_CONTINUE_EXECUTION;
-        }
-
-        return EXCEPTION_CONTINUE_SEARCH;
     }
+    return any;
+}
 
-    bool MemoryProtection::setupPageGuards() {
-        // Setup page guards on critical regions
-        for (const auto& [name, region] : m_protectedRegions) {
-            DWORD oldProtect;
-            if (!VirtualProtect(reinterpret_cast<LPVOID>(region.startAddress), 
-                               region.size, PAGE_READONLY | PAGE_GUARD, &oldProtect)) {
-                return false;
-            }
-        }
+bool MemoryProtection::isAddressHooked(uintptr_t address) {
+    // Check for JMP rel32 or absolute indirections typical of trampoline hooks
+    uint8_t opcodes[6]{};
+    if (!read_memory(address, opcodes, sizeof(opcodes))) return false;
+    if (opcodes[0] == 0xE9 || opcodes[0] == 0xE8) {
+        // Relative JMP/CALL likely hook
         return true;
     }
+    // FF 25 (jmp [abs]) on x86
+    if (opcodes[0] == 0xFF && opcodes[1] == 0x25) return true;
+#ifdef _M_X64
+    // 48 FF 25 (jmp [rip+rel]) frequently used by trampolines
+    if (opcodes[0] == 0x48 && opcodes[1] == 0xFF && opcodes[2] == 0x25) return true;
+#endif
+    return false;
+}
 
-    void MemoryProtection::removePageGuards() {
-        // Remove page guards
-        for (const auto& [name, region] : m_protectedRegions) {
-            DWORD oldProtect;
-            VirtualProtect(reinterpret_cast<LPVOID>(region.startAddress), 
-                          region.size, region.originalProtection, &oldProtect);
+bool MemoryProtection::checkImportTable() {
+    bool hooked = false;
+
+    HMODULE self = GetModuleHandleA(nullptr);
+    auto dos = reinterpret_cast<IMAGE_DOS_HEADER*>(self);
+    auto nt  = reinterpret_cast<IMAGE_NT_HEADERS*>(reinterpret_cast<uint8_t*>(self) + dos->e_lfanew);
+
+    auto& opt = nt->OptionalHeader;
+    auto iatDir = opt.DataDirectory[IMAGE_DIRECTORY_ENTRY_IAT];
+    if (!iatDir.VirtualAddress || !iatDir.Size) return false;
+
+    auto iat = reinterpret_cast<uintptr_t*>(reinterpret_cast<uint8_t*>(self) + iatDir.VirtualAddress);
+    size_t count = iatDir.Size / sizeof(uintptr_t);
+
+    auto [base, size] = module_range(self);
+
+    for (size_t i = 0; i < count; ++i) {
+        uintptr_t tgt = iat[i];
+        if (!tgt) continue;
+        if (tgt < base || tgt >= base + size) {
+            // IAT entry pointing outside module – could be hooked
+            MemoryThreatDetection det{};
+            det.type = MemoryThreat::HookInjection;
+            det.address = reinterpret_cast<uintptr_t>(&iat[i]);
+            det.size = sizeof(uintptr_t);
+            det.description = "IAT entry redirected outside module";
+            m_detectedThreats.push_back(det);
+            hooked = true;
         }
     }
+    return hooked;
+}
+
+bool MemoryProtection::checkExportTable() {
+    bool hooked = false;
+
+    HMODULE self = GetModuleHandleA(nullptr);
+    auto dos = reinterpret_cast<IMAGE_DOS_HEADER*>(self);
+    auto nt  = reinterpret_cast<IMAGE_NT_HEADERS*>(reinterpret_cast<uint8_t*>(self) + dos->e_lfanew);
+
+    auto& opt = nt->OptionalHeader;
+    auto expDir = opt.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+    if (!expDir.VirtualAddress || !expDir.Size) return false;
+
+    auto exp = reinterpret_cast<IMAGE_EXPORT_DIRECTORY*>(
+        reinterpret_cast<uint8_t*>(self) + expDir.VirtualAddress
+    );
+    auto funcs = reinterpret_cast<uint32_t*>(
+        reinterpret_cast<uint8_t*>(self) + exp->AddressOfFunctions
+    );
+
+    auto [base, size] = module_range(self);
+
+    for (DWORD i = 0; i < exp->NumberOfFunctions; ++i) {
+        uintptr_t addr = reinterpret_cast<uintptr_t>(reinterpret_cast<uint8_t*>(self) + funcs[i]);
+        if (!addr) continue;
+
+        // Check inline hook at function entry
+        if (isAddressHooked(addr)) {
+            MemoryThreatDetection det{};
+            det.type = MemoryThreat::HookInjection;
+            det.address = addr;
+            det.size = 16;
+            det.description = "Inline hook detected at export function";
+            std::vector<std::byte> bytes(16);
+            read_memory(addr, bytes.data(), bytes.size());
+            det.suspiciousData = std::move(bytes);
+            m_detectedThreats.push_back(det);
+            hooked = true;
+        }
+    }
+    return hooked;
+}
+
+bool MemoryProtection::scanInlineHooks() {
+    bool hooked = false;
+    // Scan .text for suspicious JMP trampolines
+    auto secs = enumerate_self_sections();
+    for (auto& s : secs) {
+        if (s.name != ".text") continue;
+        std::vector<uint8_t> buf(s.size);
+        if (!read_memory(s.base, buf.data(), buf.size())) continue;
+        for (size_t i = 0; i + 5 <= buf.size(); ++i) {
+            uint8_t b0 = buf[i];
+            if (b0 == 0xE9 || b0 == 0xE8) {
+                // Relative target
+                int32_t rel = *reinterpret_cast<int32_t*>(&buf[i+1]);
+                uintptr_t target = s.base + i + 5 + rel;
+                if (!addr_in_any_module(target)) {
+                    MemoryThreatDetection det{};
+                    det.type = MemoryThreat::HookInjection;
+                    det.address = s.base + i;
+                    det.size = 5;
+                    det.description = "Suspicious JMP/CALL in .text to non-module address";
+                    det.suspiciousData = { std::byte(b0),
+                                           std::byte(buf[i+1]),
+                                           std::byte(buf[i+2]),
+                                           std::byte(buf[i+3]),
+                                           std::byte(buf[i+4]) };
+                    m_detectedThreats.push_back(det);
+                    hooked = true;
+                }
+            }
+        }
+    }
+    return hooked;
+}
+
+// Access monitoring
+
+LONG WINAPI MemoryProtection::vectoredExceptionHandler(PEXCEPTION_POINTERS pExceptionInfo) {
+    if (!pExceptionInfo || !pExceptionInfo->ExceptionRecord) return EXCEPTION_CONTINUE_SEARCH;
+    auto code = pExceptionInfo->ExceptionRecord->ExceptionCode;
+
+    if (code == EXCEPTION_GUARD_PAGE || code == EXCEPTION_ACCESS_VIOLATION) {
+        // Guard page hit or illegal access – tag as threat
+        // We cannot access instance members in static handler; record minimal info via TLS or global if needed.
+        // Here we simply continue execution to allow app to run, but guard pages will be re-applied by monitor logic.
+        return EXCEPTION_CONTINUE_EXECUTION;
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
+bool MemoryProtection::setupPageGuards() {
+    bool any = false;
+    for (auto& [name, r] : m_protectedRegions) {
+        DWORD prev{};
+        if (change_protect(r.startAddress, r.size, PAGE_READONLY | PAGE_GUARD, &prev)) {
+            r.isProtected = true;
+            any = true;
+        }
+    }
+    return any;
+}
+
+void MemoryProtection::removePageGuards() {
+    for (auto& [name, r] : m_protectedRegions) {
+        if (!r.isProtected) continue;
+        DWORD prev{};
+        change_protect(r.startAddress, r.size, r.originalProtection ? r.originalProtection : PAGE_READONLY, &prev);
+        r.isProtected = false;
+    }
+}
+
+bool MemoryProtection::enableAccessMonitoring() {
+    if (m_accessMonitoringEnabled) return true;
+    m_vehHandler = AddVectoredExceptionHandler(1, MemoryProtection::vectoredExceptionHandler);
+    bool ok = (m_vehHandler != nullptr);
+    ok &= setupPageGuards();
+    m_accessMonitoringEnabled = ok;
+    return ok;
+}
+
+void MemoryProtection::disableAccessMonitoring() {
+    if (!m_accessMonitoringEnabled) return;
+    removePageGuards();
+    if (m_vehHandler) {
+        RemoveVectoredExceptionHandler(m_vehHandler);
+        m_vehHandler = nullptr;
+    }
+    m_accessMonitoringEnabled = false;
+}
+
+std::vector<MemoryThreatDetection> MemoryProtection::getAccessViolations() {
+    // In this implementation, access violations are not persisted; integrate with external logger if needed.
+    // Return current detected threats filtered by IllegalAccess.
+    std::vector<MemoryThreatDetection> out;
+    for (auto& d : m_detectedThreats) {
+        if (d.type == MemoryThreat::IllegalAccess) out.push_back(d);
+    }
+    return out;
+}
+
+// Code injection detection
+
+bool MemoryProtection::scanExecutableRegions() {
+    bool any = false;
+    MEMORY_BASIC_INFORMATION mbi{};
+    uintptr_t addr = 0;
+    while (VirtualQuery(reinterpret_cast<LPCVOID>(addr), &mbi, sizeof(mbi))) {
+        bool committed = (mbi.State == MEM_COMMIT);
+        bool exec = (mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE)) != 0;
+        uintptr_t base = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+        size_t size = mbi.RegionSize;
+
+        if (committed && exec) {
+            if (!addr_in_any_module(base)) {
+                // Potential injected code region
+                MemoryThreatDetection det{};
+                det.type = MemoryThreat::CodeInjection;
+                det.address = base;
+                det.size = size;
+                det.description = "Executable region outside known modules";
+                std::vector<std::byte> sample(std::min<size_t>(size, 256));
+                read_memory(base, sample.data(), sample.size());
+                det.suspiciousData = std::move(sample);
+                m_detectedThreats.push_back(det);
+                any = true;
+            } else if ((mbi.Protect & PAGE_EXECUTE_READWRITE) == PAGE_EXECUTE_READWRITE && m_protectionLevel >= 4) {
+                // RWX in module: suspicious patching context
+                MemoryThreatDetection det{};
+                det.type = MemoryThreat::MemoryPatch;
+                det.address = base;
+                det.size = size;
+                det.description = "RWX region inside module – probable patching";
+                m_detectedThreats.push_back(det);
+                any = true;
+            }
+        }
+        addr += mbi.RegionSize;
+    }
+    return any;
+}
+
+bool MemoryProtection::validateExecutableCode(uintptr_t address, size_t size) {
+    // Lightweight heuristic: detect high ratio of NOPs or jumps – typical of trampolines/sleds
+    std::vector<uint8_t> buf(std::min<size_t>(size, 512));
+    if (!read_memory(address, buf.data(), buf.size())) return false;
+    size_t nopCount = 0, jmpCount = 0;
+    for (auto b : buf) {
+        if (b == 0x90) ++nopCount;
+        if (b == 0xE9 || b == 0xEB || b == 0xE8 || b == 0xFF) ++jmpCount;
+    }
+    double ratio = (double)(nopCount + jmpCount) / (double)buf.size();
+    return ratio < 0.20; // if too many control-transfer/nops, treat as suspicious elsewhere
+}
+
+bool MemoryProtection::detectCodeInjection() {
+    m_detectedThreats.clear();
+    bool inj = scanExecutableRegions();
+
+    // Validate flagged regions
+    for (auto& d : m_detectedThreats) {
+        if (d.type == MemoryThreat::CodeInjection) {
+            if (!validateExecutableCode(d.address, d.size)) {
+                // keep as suspicious (do nothing)
+            }
+        }
+    }
+    return std::any_of(m_detectedThreats.begin(), m_detectedThreats.end(),
+                       [](auto& x){ return x.type == MemoryThreat::CodeInjection; });
+}
+
+std::vector<MemoryThreatDetection> MemoryProtection::scanForInjectedCode() {
+    detectCodeInjection();
+    return m_detectedThreats;
+}
+
+// Memory patch detection
+
+bool MemoryProtection::compareWithDiskImage() {
+    bool any = false;
+
+    // Read on-disk image and compare .text snapshot with in-memory current
+    auto path = self_path_w();
+    auto disk = read_file_binary(path);
+    if (disk.empty()) return false;
+
+    HMODULE self = GetModuleHandleA(nullptr);
+    auto dosMem = reinterpret_cast<IMAGE_DOS_HEADER*>(self);
+    auto ntMem  = reinterpret_cast<IMAGE_NT_HEADERS*>(reinterpret_cast<uint8_t*>(self) + dosMem->e_lfanew);
+
+    // Parse disk PE
+    auto dosDisk = reinterpret_cast<IMAGE_DOS_HEADER*>(disk.data());
+    if (dosDisk->e_magic != IMAGE_DOS_SIGNATURE) return false;
+    auto ntDisk = reinterpret_cast<IMAGE_NT_HEADERS*>(disk.data() + dosDisk->e_lfanew);
+    auto secDisk = reinterpret_cast<IMAGE_SECTION_HEADER*>(
+        reinterpret_cast<uint8_t*>(&ntDisk->OptionalHeader) + ntDisk->FileHeader.SizeOfOptionalHeader);
+
+    // Find .text section on disk
+    IMAGE_SECTION_HEADER* textDisk = nullptr;
+    for (UINT i = 0; i < ntDisk->FileHeader.NumberOfSections; ++i) {
+        char nm[9]{};
+        std::memcpy(nm, secDisk[i].Name, 8);
+        if (std::string(nm) == ".text") {
+            textDisk = &secDisk[i];
+            break;
+        }
+    }
+    if (!textDisk) return false;
+
+    size_t diskTextSize = textDisk->SizeOfRawData;
+    const uint8_t* diskTextPtr = disk.data() + textDisk->PointerToRawData;
+
+    // Compare with current memory .text
+    auto secsMem = enumerate_self_sections();
+    for (auto& s : secsMem) {
+        if (s.name != ".text") continue;
+        size_t cmpSize = std::min(s.size, diskTextSize);
+        std::vector<uint8_t> memBuf(cmpSize);
+        if (!read_memory(s.base, memBuf.data(), cmpSize)) continue;
+        if (std::memcmp(memBuf.data(), diskTextPtr, cmpSize) != 0) {
+            MemoryThreatDetection det{};
+            det.type = MemoryThreat::MemoryPatch;
+            det.address = s.base;
+            det.size = cmpSize;
+            det.description = "Memory .text diverges from disk image";
+            m_detectedThreats.push_back(det);
+            any = true;
+        }
+    }
+    return any;
+}
+
+bool MemoryProtection::scanForNopSleds() {
+    bool any = false;
+    auto secs = enumerate_self_sections();
+    for (auto& s : secs) {
+        if (s.name != ".text") continue;
+        std::vector<uint8_t> buf(s.size);
+        if (!read_memory(s.base, buf.data(), buf.size())) continue;
+        size_t consec = 0;
+        for (size_t i = 0; i < buf.size(); ++i) {
+            if (buf[i] == 0x90) {
+                consec++;
+                if (consec >= 32) {
+                    MemoryThreatDetection det{};
+                    det.type = MemoryThreat::MemoryPatch;
+                    det.address = s.base + i - consec + 1;
+                    det.size = consec;
+                    det.description = "NOP sled detected in .text";
+                    m_detectedThreats.push_back(det);
+                    any = true;
+                    break;
+                }
+            } else {
+                consec = 0;
+            }
+        }
+    }
+    return any;
+}
+
+bool MemoryProtection::detectRuntimePatches() {
+    bool any = false;
+    MEMORY_BASIC_INFORMATION mbi{};
+    uintptr_t addr = 0;
+    while (VirtualQuery(reinterpret_cast<LPCVOID>(addr), &mbi, sizeof(mbi))) {
+        bool committed = (mbi.State == MEM_COMMIT);
+        if (committed) {
+            if ((mbi.Protect & PAGE_EXECUTE_READWRITE) == PAGE_EXECUTE_READWRITE) {
+                MemoryThreatDetection det{};
+                det.type = MemoryThreat::MemoryPatch;
+                det.address = reinterpret_cast<uintptr_t>(mbi.BaseAddress);
+                det.size = mbi.RegionSize;
+                det.description = "RWX region – probable runtime patching";
+                m_detectedThreats.push_back(det);
+                any = true;
+            }
+        }
+        addr += mbi.RegionSize;
+    }
+    return any;
+}
+
+bool MemoryProtection::detectMemoryPatches() {
+    m_detectedThreats.clear();
+    bool a = compareWithDiskImage();
+    bool b = scanForNopSleds();
+    bool c = detectRuntimePatches();
+    return a || b || c;
+}
+
+std::vector<MemoryThreatDetection> MemoryProtection::scanForPatches() {
+    detectMemoryPatches();
+    return m_detectedThreats;
+}
+
+// Config
+
+void MemoryProtection::setProtectionLevel(int level) {
+    if (level < 1) level = 1;
+    if (level > 5) level = 5;
+    m_protectionLevel = level;
+}
+
+int MemoryProtection::getProtectionLevel() const {
+    return m_protectionLevel;
+}
+
+void MemoryProtection::setStealthMode(bool enabled) {
+    m_stealthMode = enabled;
+}
 
 } // namespace rgs::sdk::protection

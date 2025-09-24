@@ -1,26 +1,32 @@
-#include "dispatcher.hpp"
-#include "session.hpp"
-#include <boost/asio/post.hpp>
+#include "network/dispatcher.hpp"
+#include "network/session.hpp"
+#include "network/protocol.hpp"
 
 namespace rgs::sdk::network {
 
-    Dispatcher::Dispatcher(boost::asio::io_context& io_context)
-        : m_strand(boost::asio::make_strand(io_context)) {}
+void Dispatcher::register_handler(ServiceCode svc, ServiceHandler handler) {
+    handlers_[svc] = std::move(handler);
+}
 
-    void Dispatcher::registerHandler(MessageType type, MessageHandler handler) {
-        m_handlers[type] = handler;
+void Dispatcher::register_error_handler(ErrorHandler handler) {
+    error_handler_ = std::move(handler);
+}
+
+void Dispatcher::dispatch(const Message& msg, Session& session) {
+    // Verifica assinatura do header
+    if (msg.header().magic != MAGIC_VALUE) {
+        if (error_handler_) error_handler_(msg, session);
+        session.close();
+        return;
     }
 
-    void Dispatcher::dispatch(std::shared_ptr<Session> session, Message&& message) {
-        auto it = m_handlers.find(message.getHeader().type);
-        if (it != m_handlers.end()) {
-            // Execute the handler within the strand to ensure serial execution per session if needed
-            boost::asio::post(m_strand, [handler = it->second, session, message = std::move(message)]() mutable {
-                handler(session, std::move(message));
-            });
-        } else {
-            // Optional: Log or handle unregistered message types
-        }
+    auto svc = static_cast<ServiceCode>(msg.header().type);
+    auto it = handlers_.find(svc);
+    if (it != handlers_.end()) {
+        it->second(msg, session);
+    } else {
+        if (error_handler_) error_handler_(msg, session);
     }
+}
 
 } // namespace rgs::sdk::network

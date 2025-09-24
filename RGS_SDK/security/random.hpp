@@ -1,21 +1,31 @@
 #pragma once
 
-#include <cstdint>
 #include <vector>
+#include <string>
+#include <cstdint>
 
 namespace rgs::sdk::security {
 
-    /**
-     * @brief Generates a block of cryptographically secure random bytes.
-     * @param size The number of random bytes to generate.
-     * @return A vector containing the random bytes.
-     */
-    std::vector<std::byte> generateRandomBytes(size_t size);
+class Random {
+public:
+    // Bytes criptograficamente seguros
+    static bool bytes(std::vector<uint8_t>& out, std::size_t len);
 
-    /**
-     * @brief Generates a cryptographically secure random 64-bit integer.
-     * @return A random uint64_t.
-     */
-    uint64_t generateNonce();
+    // Gera um vetor já alocado
+    static std::vector<uint8_t> bytes(std::size_t len);
+
+    // Inteiros 32/64-bit
+    static uint32_t u32();
+    static uint64_t u64();
+
+    // Hex string (lowercase) de bytes aleatórios
+    static std::string hex(std::size_t len);
+
+    // Gera chave AES-256 (32 bytes)
+    static std::vector<uint8_t> key256();
+
+    // Gera IV padrão GCM (12 bytes)
+    static std::vector<uint8_t> iv12();
+};
 
 } // namespace rgs::sdk::security

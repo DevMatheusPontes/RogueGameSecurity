@@ -1,75 +1,91 @@
 #pragma once
 
-#include "message.hpp"
-#include "protocol.hpp"
-
 #include <boost/asio.hpp>
-#include <boost/circular_buffer.hpp>
 #include <memory>
-#include <queue>
-#include <mutex>
+#include <functional>
+#include <atomic>
+#include <string>
+#include <vector>
+
+#include "network/message.hpp"
+#include "network/dispatcher.hpp"
+#include "security/nonce.hpp"
+#include "security/hkdf.hpp"
+#include "security/random.hpp"
+#include "security/jwt.hpp"
 
 namespace rgs::sdk::network {
 
-    using boost::asio::ip::tcp;
+class SessionManager; // forward
 
-    class Session : public std::enable_shared_from_this<Session> {
-    public:
-        Session(tcp::socket socket, 
-                 std::chrono::seconds heartbeat_interval,
-                 std::chrono::seconds inactivity_timeout);
-        ~Session();
+enum class SessionRole {
+    ServerSide,
+    ClientSide
+};
 
-        uint64_t getId() const { return m_id; }
+class Session : public std::enable_shared_from_this<Session> {
+public:
+    using tcp = boost::asio::ip::tcp;
 
-        void start();
-        void stop();
+    // Server-side
+    Session(boost::asio::io_context& io,
+            tcp::socket socket,
+            Dispatcher& dispatcher,
+            std::weak_ptr<SessionManager> manager,
+            std::function<std::optional<std::pair<std::vector<uint8_t>, std::string>>(const std::string&)> jwt_validator);
 
-        void asyncSend(Message&& message);
+    // Client-side
+    Session(boost::asio::io_context& io,
+            Dispatcher& dispatcher,
+            const std::string& server_host, uint16_t server_port,
+            const std::string& jwt_token,
+            const std::vector<uint8_t>& ikm);
 
-        bool isConnected() const;
+    ~Session();
 
-        // Handlers for dispatcher
-        using MessageHandler = std::function<void(Message&&)>;
-        void setMessageHandler(MessageHandler handler) { m_messageHandler = handler; }
+    void start();
+    void close();
 
-        using DisconnectHandler = std::function<void()>;
-        void setDisconnectHandler(DisconnectHandler handler) { m_disconnectHandler = handler; }
+    bool send_plain(Message& msg);
 
-    private:
-        void doReadHeader();
-        void doReadPayload(std::size_t payloadSize);
-        void doWrite();
+    const std::string& login() const { return login_; }
+    bool authenticated() const { return authenticated_; }
 
-        void startHeartbeat();
-        void onHeartbeat(const boost::system::error_code& ec);
-        void checkDeadline();
+    bool validate_nonce(const uint8_t* iv);
 
-        static std::atomic<uint64_t> s_nextId;
-        const uint64_t m_id;
+    tcp::socket& socket() { return socket_; }
 
-        tcp::socket m_socket;
-        boost::asio::strand<boost::asio::io_context::executor_type> m_strand;
-        boost::asio::steady_timer m_heartbeatTimer;
-        boost::asio::steady_timer m_deadlineTimer;
+private:
+    void do_read_header();
+    void do_read_body(std::size_t body_len);
+    void process_incoming();
 
-        // Double buffer for reading
-        std::vector<std::byte> m_readBuffer;
-        ProtocolHeader m_readHeader{};
+    void server_handshake();
+    void client_handshake(const std::string& host, uint16_t port);
 
-        // Queue for outgoing messages with priorities
-        boost::circular_buffer<Message> m_writeQueue_high{128};
-        boost::circular_buffer<Message> m_writeQueue_medium{256};
-        boost::circular_buffer<Message> m_writeQueue_low{512};
-        std::mutex m_queueMutex;
+    void write_encrypted(Message& msg);
 
-        MessageHandler m_messageHandler;
-        DisconnectHandler m_disconnectHandler;
+private:
+    boost::asio::io_context& io_;
+    tcp::socket socket_;
+    Dispatcher& dispatcher_;
+    std::weak_ptr<SessionManager> manager_;
+    SessionRole role_;
+    std::function<std::optional<std::pair<std::vector<uint8_t>, std::string>>(const std::string&)> jwt_validator_;
 
-        std::chrono::seconds m_heartbeat_interval;
-        std::chrono::seconds m_inactivity_timeout;
+    PacketHeader incoming_header_{};
+    std::vector<uint8_t> incoming_ciphertext_;
+    Message incoming_msg_;
 
-        std::atomic<bool> m_isConnected{true};
-    };
+    std::vector<uint8_t> aes_key_;
+    rgs::sdk::security::NonceGenerator iv_gen_;
+    std::atomic<uint64_t> last_iv_counter_{0};
+
+    std::string jwt_token_;
+    std::vector<uint8_t> client_ikm_;
+
+    std::string login_;
+    bool authenticated_{false};
+};
 
 } // namespace rgs::sdk::network

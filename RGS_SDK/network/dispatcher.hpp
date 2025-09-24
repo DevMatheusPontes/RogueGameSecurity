@@ -1,38 +1,27 @@
 #pragma once
 
-#include "message.hpp"
+#include <unordered_map>
 #include <functional>
-#include <map>
-#include <memory>
-#include <boost/asio/strand.hpp>
-#include <boost/asio/io_context.hpp>
+#include "network/message.hpp"
+#include "network/service.hpp"
 
 namespace rgs::sdk::network {
 
-    class Dispatcher {
-    public:
-        using MessageHandler = std::function<void(std::shared_ptr<class Session>, Message&&)>;
+class Session; // forward-declaration
 
-        explicit Dispatcher(boost::asio::io_context& io_context);
+using ServiceHandler = std::function<void(const Message&, Session&)>;
+using ErrorHandler   = std::function<void(const Message&, Session&)>;
 
-        /**
-         * @brief Registers a handler for a specific message type.
-         * @param type The message type to handle.
-         * @param handler The function to be called when a message of 'type' is received.
-         */
-        void registerHandler(MessageType type, MessageHandler handler);
+class Dispatcher {
+public:
+    void register_handler(ServiceCode svc, ServiceHandler handler);
+    void register_error_handler(ErrorHandler handler);
 
-        /**
-         * @brief Dispatches a message to its registered handler.
-         * @param session The session that received the message.
-         * @param message The message to dispatch.
-         */
-        void dispatch(std::shared_ptr<class Session> session, Message&& message);
+    void dispatch(const Message& msg, Session& session);
 
-    private:
-        // Use a strand to ensure handlers for a given session are executed serially.
-        boost::asio::strand<boost::asio::io_context::executor_type> m_strand;
-        std::map<MessageType, MessageHandler> m_handlers;
-    };
+private:
+    std::unordered_map<ServiceCode, ServiceHandler> handlers_;
+    ErrorHandler error_handler_;
+};
 
 } // namespace rgs::sdk::network

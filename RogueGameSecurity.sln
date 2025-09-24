@@ -32,12 +32,20 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "memory", "memory", "{C2C2C2
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "network", "network", "{D3D3D3D3-D3D3-D3D3-D3D3-D3D3D3D3D3D3}"
 	ProjectSection(SolutionItems) = preProject
+		RGS_SDK\network\client.cpp = RGS_SDK\network\client.cpp
+		RGS_SDK\network\client.hpp = RGS_SDK\network\client.hpp
 		RGS_SDK\network\dispatcher.cpp = RGS_SDK\network\dispatcher.cpp
 		RGS_SDK\network\dispatcher.hpp = RGS_SDK\network\dispatcher.hpp
+		RGS_SDK\network\message.cpp = RGS_SDK\network\message.cpp
 		RGS_SDK\network\message.hpp = RGS_SDK\network\message.hpp
 		RGS_SDK\network\protocol.hpp = RGS_SDK\network\protocol.hpp
+		RGS_SDK\network\server.cpp = RGS_SDK\network\server.cpp
+		RGS_SDK\network\server.hpp = RGS_SDK\network\server.hpp
+		RGS_SDK\network\service.hpp = RGS_SDK\network\service.hpp
 		RGS_SDK\network\session.cpp = RGS_SDK\network\session.cpp
 		RGS_SDK\network\session.hpp = RGS_SDK\network\session.hpp
+		RGS_SDK\network\session_manager.cpp = RGS_SDK\network\session_manager.cpp
+		RGS_SDK\network\session_manager.hpp = RGS_SDK\network\session_manager.hpp
 		RGS_SDK\network\transport.cpp = RGS_SDK\network\transport.cpp
 		RGS_SDK\network\transport.hpp = RGS_SDK\network\transport.hpp
 	EndProjectSection
@@ -83,6 +91,20 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Itens de Solução", "Itens
 		vcpkg.json = vcpkg.json
 	EndProjectSection
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "threads", "threads", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
+	ProjectSection(SolutionItems) = preProject
+		RGS_SDK\threads\task_group.cpp = RGS_SDK\threads\task_group.cpp
+		RGS_SDK\threads\task_group.hpp = RGS_SDK\threads\task_group.hpp
+		RGS_SDK\threads\thread_guard.cpp = RGS_SDK\threads\thread_guard.cpp
+		RGS_SDK\threads\thread_guard.hpp = RGS_SDK\threads\thread_guard.hpp
+		RGS_SDK\threads\thread_monitor.cpp = RGS_SDK\threads\thread_monitor.cpp
+		RGS_SDK\threads\thread_monitor.hpp = RGS_SDK\threads\thread_monitor.hpp
+		RGS_SDK\threads\thread_pool.cpp = RGS_SDK\threads\thread_pool.cpp
+		RGS_SDK\threads\thread_pool.hpp = RGS_SDK\threads\thread_pool.hpp
+		RGS_SDK\threads\thread_utils.cpp = RGS_SDK\threads\thread_utils.cpp
+		RGS_SDK\threads\thread_utils.hpp = RGS_SDK\threads\thread_utils.hpp
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Win32 = Debug|Win32
@@ -112,6 +134,7 @@ Global
 		{E4E4E4E4-E4E4-E4E4-E4E4-E4E4E4E4E4E4} = {A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}
 		{F5F5F5F5-F5F5-F5F5-F5F5-F5F5F5F5F5F5} = {A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}
 		{BF4C0C5E-DFC5-4053-8A57-81CF8609C70F} = {A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}
+		{02EA681E-C7D8-13C7-8484-4AC65E1B71E8} = {A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {88888888-8888-8888-8888-888888888888}

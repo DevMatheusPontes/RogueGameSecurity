@@ -1,461 +1,335 @@
 #include "anti_debug.hpp"
-#include "../hooks/hook_manager.hpp"
-#include "../memory/memory_access.hpp"
+#include <intrin.h>
+#include <psapi.h>
 #include <winternl.h>
+#include <chrono>
+#include <thread>
+#include <vector>
+#include <algorithm>
 
-// NT API definitions
-typedef NTSTATUS (NTAPI *pNtQueryInformationProcess)(
-    HANDLE ProcessHandle,
-    PROCESSINFOCLASS ProcessInformationClass,
-    PVOID ProcessInformation,
-    ULONG ProcessInformationLength,
-    PULONG ReturnLength
-);
+// Prototypes para NtQueryInformationProcess / NtQuerySystemInformation
+using NtQIP = NTSTATUS(WINAPI*)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+using NtQSI = NTSTATUS(WINAPI*)(ULONG, PVOID, ULONG, PULONG);
 
 namespace rgs::sdk::protection {
 
-    AntiDebug::AntiDebug() {
-        
+AntiDebug::AntiDebug()  = default;
+AntiDebug::~AntiDebug() = default;
+
+bool AntiDebug::initialize() {
+    m_initialized = true;
+    return true;
+}
+
+void AntiDebug::shutdown() {
+    m_initialized = false;
+}
+
+void AntiDebug::setProtectionEnabled(bool enabled) {
+    m_enabled = enabled;
+}
+
+bool AntiDebug::isProtectionEnabled() const {
+    return m_enabled;
+}
+
+bool AntiDebug::isBeingDebugged() {
+    if (!m_initialized || !m_enabled) return false;
+    auto det = scanForDebuggers();
+    return std::any_of(det.begin(), det.end(), [](auto& d){ return d.isActive; });
+}
+
+std::vector<DebugDetection> AntiDebug::scanForDebuggers() {
+    std::vector<DebugDetection> results;
+    auto add = [&](DebuggerType t, const std::string& m, const std::string& d, bool a) {
+        results.push_back({t,m,d,a});
+    };
+
+    add(DebuggerType::UserModeAPI,        "IsDebuggerPresent",        "Windows API IsDebuggerPresent",           checkIsDebuggerPresent());
+    add(DebuggerType::UserModeAPI,        "CheckRemoteDebugger",      "Windows API CheckRemoteDebuggerPresent",  checkRemoteDebuggerPresent());
+    add(DebuggerType::UserModePEB,        "PEB.BeingDebugged",        "PEB BeingDebugged flag",                  detectPEBBeingDebugged());
+    add(DebuggerType::UserModeGlobalFlag, "PEB.NtGlobalFlag",        "PEB NtGlobalFlag modification",           detectPEBNtGlobalFlag());
+    add(DebuggerType::UserModeHeap,       "Heap.Flags",              "Heap tail/trash checks",                  detectHeapFlags());
+    add(DebuggerType::UserModePort,       "DebugPort",               "NtQueryInformationProcess DebugPort",     detectDebugPort());
+    add(DebuggerType::UserModePort,       "DebugObject",             "NtQueryInformationProcess DebugObject",   detectDebugObject());
+    add(DebuggerType::KernelMode,         "KernelDebugger",          "NtQuerySystemInformation KdDebugger",     detectKernelDebugger());
+    add(DebuggerType::Hardware,           "Hardware.Breakpoints",    "CPU DR0-DR3 registers",                   detectHardwareBreakpoints());
+    add(DebuggerType::UserModeAPI,        "INT3.Scan",               "Memory scan for 0xCC opcodes",            detectSoftwareBreakpoints());
+    add(DebuggerType::UserModeTiming,     "Timing.Anomaly",          "Loop execution time anomaly",             detectTimingAnomaly());
+    add(DebuggerType::UserModeTrap,       "OutputDebugString.Trap",  "Exception on OutputDebugStringA",         detectOutputDebugStringTrap());
+    add(DebuggerType::UserModeWindow,     "Window.Debugger",         "FindWindow for known debugger classes",   detectDebuggerWindows());
+    add(DebuggerType::UserModeProcess,    "Process.Debugger",        "Enum processes for debugger executables", detectDebuggerProcesses());
+    add(DebuggerType::Hypervisor,         "CPUID.Hypervisor",        "CPU hypervisor bit",                      detectHypervisor());
+    add(DebuggerType::UserModeAPI,        "Stealth.Hooks",           "Detect inline/IAT/EAT/SSDT hooks",        detectStealthHooks());
+    add(DebuggerType::UserModeAPI,        "IDT.Integrity",           "Checksum of IDT entries",                 detectIDTIntegrity());
+
+    return results;
+}
+
+// ————— Detecção por APIs Windows —————
+
+bool AntiDebug::checkIsDebuggerPresent() {
+    return ::IsDebuggerPresent() != FALSE;
+}
+
+bool AntiDebug::checkRemoteDebuggerPresent() {
+    BOOL remote = FALSE;
+    return ::CheckRemoteDebuggerPresent(GetCurrentProcess(), &remote) && remote;
+}
+
+// ————— PEB internals —————
+
+bool AntiDebug::detectPEBBeingDebugged() {
+#ifdef _M_IX86
+    DWORD peb = __readfsdword(0x30);
+    return *(BYTE*)(peb + 2) != 0;
+#elif defined(_M_X64)
+    DWORD64 peb = __readgsqword(0x60);
+    return *(BYTE*)(peb + 2) != 0;
+#else
+    return false;
+#endif
+}
+
+bool AntiDebug::detectPEBNtGlobalFlag() {
+#ifdef _M_IX86
+    DWORD peb = __readfsdword(0x30);
+    return ((*(DWORD*)(peb + 0x68)) & 0x70) != 0;
+#elif defined(_M_X64)
+    DWORD64 peb = __readgsqword(0x60);
+    return ((*(DWORD*)(peb + 0xBC)) & 0x70) != 0;
+#else
+    return false;
+#endif
+}
+
+// ————— Heap flags —————
+
+bool AntiDebug::detectHeapFlags() {
+    HANDLE h = GetProcessHeap();
+    // offset 0x10 em Win10 x64
+    DWORD flags = *(DWORD*)((uintptr_t)h + 0x10);
+    const DWORD HEAP_TAIL_CHECKING = 0x4;
+    return (flags & HEAP_TAIL_CHECKING) != 0;
+}
+
+// ————— NtQueryInformationProcess —————
+
+bool AntiDebug::detectDebugPort() {
+    auto ntdll = GetModuleHandleA("ntdll.dll");
+    auto fn    = (NtQIP)GetProcAddress(ntdll, "NtQueryInformationProcess");
+    if (!fn) return false;
+    ULONG_PTR port = 0;
+    NTSTATUS st    = fn(GetCurrentProcess(), 7, &port, sizeof(port), nullptr);
+    return NT_SUCCESS(st) && port != 0;
+}
+
+bool AntiDebug::detectDebugObject() {
+    auto ntdll = GetModuleHandleA("ntdll.dll");
+    auto fn    = (NtQIP)GetProcAddress(ntdll, "NtQueryInformationProcess");
+    if (!fn) return false;
+    HANDLE obj = nullptr;
+    NTSTATUS st = fn(GetCurrentProcess(), 30, &obj, sizeof(obj), nullptr);
+    return NT_SUCCESS(st) && obj != nullptr;
+}
+
+// ————— Kernel debugger info —————
+
+bool AntiDebug::detectKernelDebugger() {
+    auto ntdll = GetModuleHandleA("ntdll.dll");
+    auto fn    = (NtQSI)GetProcAddress(ntdll, "NtQuerySystemInformation");
+    if (!fn) return false;
+    struct { BOOLEAN Enabled; BOOLEAN Crashed; } info{};
+    NTSTATUS st = fn(35 /*SystemKernelDebuggerInformation*/, &info, sizeof(info), nullptr);
+    return NT_SUCCESS(st) && (info.Enabled || info.Crashed);
+}
+
+// ————— Hardware breakpoints —————
+
+bool AntiDebug::detectHardwareBreakpoints() {
+    CONTEXT ctx = {}; ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
+    if (GetThreadContext(GetCurrentThread(), &ctx)) {
+        return ctx.Dr0||ctx.Dr1||ctx.Dr2||ctx.Dr3;
     }
+    return false;
+}
 
-    AntiDebug::~AntiDebug() {
-        shutdown();
+// ————— Software breakpoints (INT3) —————
+
+bool AntiDebug::detectSoftwareBreakpoints() {
+    MEMORY_BASIC_INFORMATION mbi;
+    uintptr_t addr = 0;
+    auto proc = GetCurrentProcess();
+
+    while (VirtualQueryEx(proc,(LPCVOID)addr,&mbi,sizeof(mbi))) {
+        if (mbi.State==MEM_COMMIT && (mbi.Protect & PAGE_EXECUTE_READWRITE)) {
+            std::vector<BYTE> buf(mbi.RegionSize);
+            SIZE_T rd;
+            if (ReadProcessMemory(proc, mbi.BaseAddress, buf.data(), buf.size(), &rd)) {
+                for (SIZE_T i=0;i<rd;++i) {
+                    if (buf[i]==0xCC) return true;
+                }
+            }
+        }
+        addr += mbi.RegionSize;
     }
+    return false;
+}
 
-    bool AntiDebug::initialize() {
-        if (m_initialized) {
-            return true;
-        }
+// ————— Timing anomaly —————
 
-        // Initialize hook manager if needed
-        auto& hookManager = rgs::sdk::hooks::HookManager::getInstance();
-        if (!hookManager.initialize()) {
-            return false;
-        }
+bool AntiDebug::detectTimingAnomaly() {
+    return measureLoopTime() > 200;
+}
 
-        // Apply anti-debugging patches
-        if (m_protectionEnabled) {
-            patchDebuggerDetection();
-            enableAntiAttach();
-        }
+DWORD AntiDebug::measureLoopTime(size_t it) {
+    auto t0 = std::chrono::high_resolution_clock::now();
+    for (volatile size_t i=0;i<it;++i);
+    auto t1 = std::chrono::high_resolution_clock::now();
+    return (DWORD)std::chrono::duration_cast<std::chrono::milliseconds>(t1-t0).count();
+}
 
-        m_initialized = true;
+// ————— OutputDebugString trap —————
+
+bool AntiDebug::detectOutputDebugStringTrap() {
+    __try {
+        OutputDebugStringA("RGS_TRAP");
+        return false;
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
         return true;
     }
+}
 
-    void AntiDebug::shutdown() {
-        if (!m_initialized) {
-            return;
-        }
+// ————— Janela de debugger —————
 
-        // Remove any hooks we installed
-        auto& hookManager = rgs::sdk::hooks::HookManager::getInstance();
-        hookManager.removeHook("IsDebuggerPresent");
-        hookManager.removeHook("CheckRemoteDebuggerPresent");
-        hookManager.removeHook("NtQueryInformationProcess");
-
-        m_initialized = false;
+bool AntiDebug::detectDebuggerWindows() {
+    static const char* classes[] = {
+        "OLLYDBG", "WinDbgFrameClass", "Qt5QWindowIcon", "x64dbg", "ID"
+    };
+    for (auto cls : classes) {
+        if (FindWindowA(cls, nullptr)) return true;
     }
+    return false;
+}
 
-    std::vector<DebugDetection> AntiDebug::scanForDebuggers() {
-        std::vector<DebugDetection> detections;
+// ————— Processos de debugger —————
 
-        // PEB-based detection
-        if (detectPEB()) {
-            DebugDetection det;
-            det.type = DebuggerType::UserMode;
-            det.method = "PEB.BeingDebugged";
-            det.description = "Debugger detected via PEB BeingDebugged flag";
-            det.isActive = true;
-            detections.push_back(det);
-        }
-
-        // NT Global Flag detection
-        if (detectNtGlobalFlag()) {
-            DebugDetection det;
-            det.type = DebuggerType::UserMode;
-            det.method = "PEB.NtGlobalFlag";
-            det.description = "Debugger detected via NT Global Flag";
-            det.isActive = true;
-            detections.push_back(det);
-        }
-
-        // Heap flags detection
-        if (detectHeapFlags()) {
-            DebugDetection det;
-            det.type = DebuggerType::UserMode;
-            det.method = "HeapFlags";
-            det.description = "Debugger detected via heap flags";
-            det.isActive = true;
-            detections.push_back(det);
-        }
-
-        // Debug port detection
-        if (detectDebugPort()) {
-            DebugDetection det;
-            det.type = DebuggerType::UserMode;
-            det.method = "DebugPort";
-            det.description = "Debugger detected via debug port";
-            det.isActive = true;
-            detections.push_back(det);
-        }
-
-        // Hardware breakpoint detection
-        if (detectHardwareBreakpoints()) {
-            DebugDetection det;
-            det.type = DebuggerType::Hardware;
-            det.method = "HardwareBreakpoints";
-            det.description = "Hardware breakpoints detected";
-            det.isActive = true;
-            detections.push_back(det);
-        }
-
-        // Software breakpoint detection
-        if (detectSoftwareBreakpoints()) {
-            DebugDetection det;
-            det.type = DebuggerType::UserMode;
-            det.method = "SoftwareBreakpoints";
-            det.description = "Software breakpoints detected";
-            det.isActive = true;
-            detections.push_back(det);
-        }
-
-        // Timing-based detection
-        if (detectTiming()) {
-            DebugDetection det;
-            det.type = DebuggerType::UserMode;
-            det.method = "TimingCheck";
-            det.description = "Debugger detected via timing analysis";
-            det.isActive = true;
-            detections.push_back(det);
-        }
-
-        // Remote debugger detection
-        if (detectRemoteDebugger()) {
-            DebugDetection det;
-            det.type = DebuggerType::Remote;
-            det.method = "RemoteDebugger";
-            det.description = "Remote debugger detected";
-            det.isActive = true;
-            detections.push_back(det);
-        }
-
-        return detections;
-    }
-
-    bool AntiDebug::isBeingDebugged() {
-        return detectPEB() || detectDebugPort() || detectHardwareBreakpoints() || 
-               detectSoftwareBreakpoints() || detectTiming();
-    }
-
-    bool AntiDebug::detectPEB() {
-        // Check PEB BeingDebugged flag
-        __try {
-#ifdef _WIN64
-            PPEB peb = (PPEB)__readgsqword(0x60);
-#else
-            PPEB peb = (PPEB)__readfsdword(0x30);
-#endif
-            return peb->BeingDebugged != 0;
-        }
-        __except(EXCEPTION_EXECUTE_HANDLER) {
-            return false;
-        }
-    }
-
-    bool AntiDebug::detectNtGlobalFlag() {
-        __try {
-#ifdef _WIN64
-            PPEB peb = (PPEB)__readgsqword(0x60);
-#else
-            PPEB peb = (PPEB)__readfsdword(0x30);
-#endif
-            // Check NT Global Flag for debug heap flags
-            return (peb->NtGlobalFlag & 0x70) != 0;
-        }
-        __except(EXCEPTION_EXECUTE_HANDLER) {
-            return false;
-        }
-    }
-
-    bool AntiDebug::detectHeapFlags() {
-        __try {
-#ifdef _WIN64
-            PPEB peb = (PPEB)__readgsqword(0x60);
-#else
-            PPEB peb = (PPEB)__readfsdword(0x30);
-#endif
-            PVOID heap = peb->ProcessHeap;
-            if (!heap) return false;
-
-            // Check heap flags
-            DWORD flags = *((DWORD*)((BYTE*)heap + 0x40));
-            DWORD forceFlags = *((DWORD*)((BYTE*)heap + 0x44));
-            
-            return (flags & ~HEAP_GROWABLE) || (forceFlags != 0);
-        }
-        __except(EXCEPTION_EXECUTE_HANDLER) {
-            return false;
-        }
-    }
-
-    bool AntiDebug::detectDebugPort() {
-        HANDLE hProcess = GetCurrentProcess();
-        DWORD debugPort = 0;
-        ULONG returnLength = 0;
-
-        HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
-        if (!hNtdll) return false;
-
-        pNtQueryInformationProcess NtQueryInformationProcess = 
-            (pNtQueryInformationProcess)GetProcAddress(hNtdll, "NtQueryInformationProcess");
-        
-        if (!NtQueryInformationProcess) return false;
-
-        NTSTATUS status = NtQueryInformationProcess(
-            hProcess,
-            ProcessDebugPort,
-            &debugPort,
-            sizeof(debugPort),
-            &returnLength
-        );
-
-        return (NT_SUCCESS(status) && debugPort != 0);
-    }
-
-    bool AntiDebug::detectDebugObject() {
-        HANDLE hProcess = GetCurrentProcess();
-        HANDLE debugObject = NULL;
-        ULONG returnLength = 0;
-
-        HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
-        if (!hNtdll) return false;
-
-        pNtQueryInformationProcess NtQueryInformationProcess = 
-            (pNtQueryInformationProcess)GetProcAddress(hNtdll, "NtQueryInformationProcess");
-        
-        if (!NtQueryInformationProcess) return false;
-
-        NTSTATUS status = NtQueryInformationProcess(
-            hProcess,
-            ProcessDebugObjectHandle,
-            &debugObject,
-            sizeof(debugObject),
-            &returnLength
-        );
-
-        return (NT_SUCCESS(status) && debugObject != NULL);
-    }
-
-    bool AntiDebug::detectHardwareBreakpoints() {
-        CONTEXT ctx;
-        HANDLE hThread = GetCurrentThread();
-
-        ctx.ContextFlags = CONTEXT_DEBUG_REGISTERS;
-        if (!GetThreadContext(hThread, &ctx)) {
-            return false;
-        }
-
-        // Check if any debug registers are set
-        return (ctx.Dr0 != 0 || ctx.Dr1 != 0 || ctx.Dr2 != 0 || ctx.Dr3 != 0 || ctx.Dr7 != 0);
-    }
-
-    bool AntiDebug::detectSoftwareBreakpoints() {
-        return scanMemoryForBreakpoints();
-    }
-
-    bool AntiDebug::detectTiming() {
-        LARGE_INTEGER start, end, frequency;
-        
-        QueryPerformanceFrequency(&frequency);
-        QueryPerformanceCounter(&start);
-        
-        // Perform some simple operations
-        for (int i = 0; i < 100; i++) {
-            __nop();
-        }
-        
-        QueryPerformanceCounter(&end);
-        
-        // Calculate execution time in microseconds
-        double timeElapsed = ((double)(end.QuadPart - start.QuadPart) * 1000000.0) / frequency.QuadPart;
-        
-        // If execution took too long, likely being debugged
-        return timeElapsed > 1000.0; // 1ms threshold
-    }
-
-    bool AntiDebug::detectExceptions() {
-        __try {
-            // Trigger an exception and check if it's handled properly
-            *(int*)0 = 0;
-        }
-        __except(EXCEPTION_EXECUTE_HANDLER) {
-            return false; // Exception handled normally
-        }
-        return true; // Should not reach here if debugger isn't present
-    }
-
-    bool AntiDebug::detectRemoteDebugger() {
-        BOOL isRemoteDebuggerPresent = FALSE;
-        if (CheckRemoteDebuggerPresent(GetCurrentProcess(), &isRemoteDebuggerPresent)) {
-            return isRemoteDebuggerPresent != FALSE;
-        }
-        return false;
-    }
-
-    void AntiDebug::hideFromDebugger() {
-        HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
-        if (!hNtdll) return;
-
-        typedef NTSTATUS (NTAPI *pNtSetInformationThread)(
-            HANDLE ThreadHandle,
-            THREADINFOCLASS ThreadInformationClass,
-            PVOID ThreadInformation,
-            ULONG ThreadInformationLength
-        );
-
-        pNtSetInformationThread NtSetInformationThread = 
-            (pNtSetInformationThread)GetProcAddress(hNtdll, "NtSetInformationThread");
-
-        if (NtSetInformationThread) {
-            NtSetInformationThread(GetCurrentThread(), ThreadHideFromDebugger, NULL, 0);
-        }
-    }
-
-    void AntiDebug::patchDebuggerDetection() {
-        patchIsDebuggerPresent();
-        patchCheckRemoteDebuggerPresent();
-        patchNtQueryInformationProcess();
-    }
-
-    void AntiDebug::enableAntiAttach() {
-        hideFromDebugger();
-    }
-
-    bool AntiDebug::scanForBreakpoints() {
-        return scanMemoryForBreakpoints();
-    }
-
-    void AntiDebug::removeBreakpoints() {
-        // Scan for and remove software breakpoints (0xCC, 0xCD03)
-        MEMORY_BASIC_INFORMATION mbi;
-        for (uintptr_t addr = 0x400000; addr < 0x7FFFFFFF; addr += mbi.RegionSize) {
-            if (VirtualQuery(reinterpret_cast<LPCVOID>(addr), &mbi, sizeof(mbi)) == 0) {
-                continue;
-            }
-
-            if (mbi.State == MEM_COMMIT && (mbi.Protect & PAGE_EXECUTE_READ)) {
-                auto buffer = rgs::sdk::memory::readBuffer(addr, mbi.RegionSize);
-                for (size_t i = 0; i < buffer.size(); i++) {
-                    if (buffer[i] == std::byte{0xCC}) { // INT3 breakpoint
-                        // Replace with original instruction (would need to be stored)
-                        rgs::sdk::memory::write<BYTE>(addr + i, 0x90); // NOP for now
-                    }
-                }
-            }
-        }
-    }
-
-    bool AntiDebug::scanMemoryForBreakpoints() {
-        MEMORY_BASIC_INFORMATION mbi;
-        for (uintptr_t addr = 0x400000; addr < 0x7FFFFFFF; addr += mbi.RegionSize) {
-            if (VirtualQuery(reinterpret_cast<LPCVOID>(addr), &mbi, sizeof(mbi)) == 0) {
-                continue;
-            }
-
-            if (mbi.State == MEM_COMMIT && (mbi.Protect & PAGE_EXECUTE_READ)) {
-                auto buffer = rgs::sdk::memory::readBuffer(addr, mbi.RegionSize);
-                for (const auto& byte : buffer) {
-                    if (byte == std::byte{0xCC} || byte == std::byte{0xCD}) {
-                        return true; // Breakpoint found
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
-    void AntiDebug::patchIsDebuggerPresent() {
-        HMODULE hKernel32 = GetModuleHandleA("kernel32.dll");
-        if (!hKernel32) return;
-
-        FARPROC pIsDebuggerPresent = GetProcAddress(hKernel32, "IsDebuggerPresent");
-        if (!pIsDebuggerPresent) return;
-
-        // Hook IsDebuggerPresent to always return FALSE
-        auto& hookManager = rgs::sdk::hooks::HookManager::getInstance();
-        
-        auto fakeIsDebuggerPresent = []() -> BOOL {
-            return FALSE;
+bool AntiDebug::detectDebuggerProcesses() {
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0);
+    if (snap==INVALID_HANDLE_VALUE) return false;
+    PROCESSENTRY32 pe = { sizeof(pe) };
+    for (BOOL ok=Process32First(snap,&pe); ok; ok=Process32Next(snap,&pe)) {
+        std::string name(pe.szExeFile);
+        std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+        static const char* procs[] = {
+            "ollydbg.exe","x64dbg.exe","ida.exe","cheatengine.exe","windbg.exe"
         };
-
-        hookManager.installHook("IsDebuggerPresent", pIsDebuggerPresent, 
-                               reinterpret_cast<void*>(fakeIsDebuggerPresent));
-        hookManager.enableHook("IsDebuggerPresent");
-    }
-
-    void AntiDebug::patchCheckRemoteDebuggerPresent() {
-        HMODULE hKernel32 = GetModuleHandleA("kernel32.dll");
-        if (!hKernel32) return;
-
-        FARPROC pCheckRemoteDebuggerPresent = GetProcAddress(hKernel32, "CheckRemoteDebuggerPresent");
-        if (!pCheckRemoteDebuggerPresent) return;
-
-        auto& hookManager = rgs::sdk::hooks::HookManager::getInstance();
-        
-        auto fakeCheckRemoteDebuggerPresent = [](HANDLE hProcess, PBOOL pbDebuggerPresent) -> BOOL {
-            if (pbDebuggerPresent) {
-                *pbDebuggerPresent = FALSE;
+        for (auto p: procs){
+            if (name.find(p)!=std::string::npos) {
+                CloseHandle(snap);
+                return true;
             }
-            return TRUE;
-        };
-
-        hookManager.installHook("CheckRemoteDebuggerPresent", pCheckRemoteDebuggerPresent, 
-                               reinterpret_cast<void*>(fakeCheckRemoteDebuggerPresent));
-        hookManager.enableHook("CheckRemoteDebuggerPresent");
+        }
     }
+    CloseHandle(snap);
+    return false;
+}
 
-    void AntiDebug::patchNtQueryInformationProcess() {
-        HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
-        if (!hNtdll) return;
+// ————— Hypervisor detection via CPUID —————
 
-        FARPROC pNtQueryInformationProcess = GetProcAddress(hNtdll, "NtQueryInformationProcess");
-        if (!pNtQueryInformationProcess) return;
+bool AntiDebug::detectHypervisor() {
+    int CPUInfo[4] = { 0 };
+    __cpuid(CPUInfo, 1);
+    return (CPUInfo[2] & (1 << 31)) != 0;
+}
 
-        auto& hookManager = rgs::sdk::hooks::HookManager::getInstance();
-        
-        auto fakeNtQueryInformationProcess = [](
-            HANDLE ProcessHandle,
-            PROCESSINFOCLASS ProcessInformationClass,
-            PVOID ProcessInformation,
-            ULONG ProcessInformationLength,
-            PULONG ReturnLength) -> NTSTATUS {
-            
-            if (ProcessInformationClass == ProcessDebugPort ||
-                ProcessInformationClass == ProcessDebugObjectHandle) {
-                return STATUS_ACCESS_DENIED;
+// ————— Stealth hook detection (IAT/EAT/inline) —————
+
+bool AntiDebug::detectStealthHooks() {
+    HMODULE mods[1024]; DWORD cb;
+    if (!EnumProcessModules(GetCurrentProcess(),mods,sizeof(mods),&cb)) return false;
+    for (DWORD i=0;i<cb/sizeof(HMODULE);++i) {
+        MODULEINFO mi; GetModuleInformation(GetCurrentProcess(),mods[i],&mi,sizeof(mi));
+        auto base = (BYTE*)mi.lpBaseOfDll;
+        // varredura de EAT/IAT prólogo: procura por JMP para fora dos limites
+        IMAGE_DOS_HEADER* dos = (IMAGE_DOS_HEADER*)base;
+        IMAGE_NT_HEADERS* nt = (IMAGE_NT_HEADERS*)(base + dos->e_lfanew);
+        auto dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+        if (dir.Size==0) continue;
+        auto exp = (IMAGE_EXPORT_DIRECTORY*)(base + dir.VirtualAddress);
+        auto names = (DWORD*)(base + exp->AddressOfNames);
+        for (DWORD j=0;j<exp->NumberOfNames;++j) {
+            auto fn = (char*)(base + names[j]);
+            FARPROC addr = GetProcAddress(mods[i],fn);
+            // inline patch detection: primeiro byte não é 0xE9/0xE8?
+            if (addr && (((BYTE*)addr)[0] != 0xE9 && ((BYTE*)addr)[0] != 0xE8)) {
+                // presumivelmente sem hook, continua
+            } else {
+                return true;
             }
-            
-            // Call original function for other cases
-            auto originalFunc = hookManager.getOriginal<pNtQueryInformationProcess>("NtQueryInformationProcess");
-            if (originalFunc) {
-                return originalFunc(ProcessHandle, ProcessInformationClass, 
-                                  ProcessInformation, ProcessInformationLength, ReturnLength);
-            }
-            return STATUS_UNSUCCESSFUL;
-        };
-
-        hookManager.installHook("NtQueryInformationProcess", pNtQueryInformationProcess, 
-                               reinterpret_cast<void*>(fakeNtQueryInformationProcess));
-        hookManager.enableHook("NtQueryInformationProcess");
+        }
     }
+    return false;
+}
 
-    void AntiDebug::setProtectionEnabled(bool enabled) {
-        m_protectionEnabled = enabled;
-    }
+// ————— IDT integrity check —————
 
-    bool AntiDebug::isProtectionEnabled() const {
-        return m_protectionEnabled;
+bool AntiDebug::detectIDTIntegrity() {
+    // loda IDTR
+    struct { WORD limit; DWORD_PTR base; } idtr;
+    __sidt(&idtr);
+    // calcula checksum de primeiros 0x100 entradas
+    BYTE* entries = (BYTE*)idtr.base;
+    DWORD sum = 0;
+    for (size_t i=0;i<0x100*16;i+=16) {
+        DWORD low = *(DWORD*)(entries + i);
+        DWORD high = *(DWORD*)(entries + i + 8);
+        sum ^= (low ^ high);
     }
+    return sum != 0;  // se alterado pelo debugger/VM
+}
+
+// ————— Evasão & patching —————
+
+void AntiDebug::hideFromDebugger() {
+    // NtSetInformationThread(ThreadHideFromDebugger)
+    auto ntdll = GetModuleHandleA("ntdll.dll");
+    auto fn    = (decltype(&NtQIP))GetProcAddress(ntdll,"NtSetInformationThread");
+    if (fn) fn(GetCurrentThread(),0x11,nullptr,0);
+}
+
+void AntiDebug::patchDebuggerAPIs() {
+    patchAPI("kernel32.dll","IsDebuggerPresent");
+    patchAPI("kernel32.dll","CheckRemoteDebuggerPresent");
+    patchAPI("ntdll.dll",   "NtQueryInformationProcess");
+}
+
+void AntiDebug::disableDebugPrivileges() {
+    adjustPrivilege(SE_DEBUG_NAME,false);
+}
+
+void AntiDebug::patchAPI(const char* mod, const char* func) {
+    HMODULE h = GetModuleHandleA(mod);
+    if (!h) return;
+    FARPROC f = GetProcAddress(h, func);
+    if (!f) return;
+    DWORD old;
+    VirtualProtect(f, 5, PAGE_EXECUTE_READWRITE, &old);
+    BYTE ret = 0xC3;                       // RET
+    memcpy(f, &ret, 1);
+    VirtualProtect(f, 5, old, &old);
+}
+
+bool AntiDebug::adjustPrivilege(const wchar_t* priv, bool enable) {
+    HANDLE tk; TOKEN_PRIVILEGES tp; LUID luid;
+    if (!OpenProcessToken(GetCurrentProcess(),TOKEN_ADJUST_PRIVILEGES|TOKEN_QUERY,&tk)) return false;
+    if (!LookupPrivilegeValueW(nullptr,priv,&luid)) { CloseHandle(tk); return false; }
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Luid = luid;
+    tp.Privileges[0].Attributes = enable?SE_PRIVILEGE_ENABLED:0;
+    AdjustTokenPrivileges(tk,false,&tp,sizeof(tp),nullptr,nullptr);
+    CloseHandle(tk);
+    return GetLastError()==ERROR_SUCCESS;
+}
 
 } // namespace rgs::sdk::protection

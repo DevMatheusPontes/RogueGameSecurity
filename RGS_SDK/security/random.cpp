@@ -1,31 +1,48 @@
 #include "random.hpp"
-#include <windows.h>
-#include <wincrypt.h>
-#pragma comment(lib, "advapi32.lib")
+#include <openssl/rand.h>
+#include <sstream>
+#include <iomanip>
 
 namespace rgs::sdk::security {
 
-    std::vector<std::byte> generateRandomBytes(size_t size) {
-        std::vector<std::byte> buffer(size);
-        HCRYPTPROV hCryptProv = 0;
+bool Random::bytes(std::vector<uint8_t>& out, std::size_t len) {
+    out.resize(len);
+    return RAND_bytes(out.data(), static_cast<int>(len)) == 1;
+}
 
-        if (CryptAcquireContext(&hCryptProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
-            CryptGenRandom(hCryptProv, static_cast<DWORD>(buffer.size()), reinterpret_cast<BYTE*>(buffer.data()));
-            CryptReleaseContext(hCryptProv, 0);
-        }
+std::vector<uint8_t> Random::bytes(std::size_t len) {
+    std::vector<uint8_t> out(len);
+    RAND_bytes(out.data(), static_cast<int>(len));
+    return out;
+}
 
-        return buffer;
+uint32_t Random::u32() {
+    uint32_t v;
+    RAND_bytes(reinterpret_cast<unsigned char*>(&v), sizeof(v));
+    return v;
+}
+
+uint64_t Random::u64() {
+    uint64_t v;
+    RAND_bytes(reinterpret_cast<unsigned char*>(&v), sizeof(v));
+    return v;
+}
+
+std::string Random::hex(std::size_t len) {
+    auto b = bytes(len);
+    std::ostringstream oss;
+    for (auto c : b) {
+        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(c);
     }
+    return oss.str();
+}
 
-    uint64_t generateNonce() {
-        uint64_t nonce = 0;
-        HCRYPTPROV hCryptProv = 0;
+std::vector<uint8_t> Random::key256() {
+    return bytes(32);
+}
 
-        if (CryptAcquireContext(&hCryptProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
-            CryptGenRandom(hCryptProv, sizeof(nonce), reinterpret_cast<BYTE*>(&nonce));
-            CryptReleaseContext(hCryptProv, 0);
-        }
-        return nonce;
-    }
+std::vector<uint8_t> Random::iv12() {
+    return bytes(12);
+}
 
 } // namespace rgs::sdk::security

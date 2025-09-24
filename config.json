@@ -1,27 +1,5 @@
 {
-  "network": {
-    "heartbeat_interval_seconds": 15,
-    "inactivity_timeout_seconds": 60,
-    "reconnect_initial_interval_ms": 1000,
-    "reconnect_max_interval_seconds": 60,
-    "hmac_enabled": false,
-    "queues": {
-      "high_priority_size": 128,
-      "medium_priority_size": 256,
-      "low_priority_size": 512
-    }
-  },
-  "memory": {
-    "max_read_size": 4096,
-    "max_write_size": 4096,
-    "allow_protected_write": false,
-    "max_scan_time_ms": 5000
-  },
-  "hooks": {
-    "max_active_hooks": 128,
-    "allow_protected_hooks": false
-  },
-  "security": {
-    "replay_window_size": 1024
-  }
+  "server_port": 8080,
+  "enable_security": true,
+  "log_level": "debug"
 }
