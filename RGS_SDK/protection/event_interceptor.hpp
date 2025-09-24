@@ -1,37 +1,55 @@
 #pragma once
 
-#include <functional>
+#include <windows.h>
 #include <string>
 #include <vector>
+#include <atomic>
+#include <unordered_set>
 
 namespace rgs::sdk::protection {
 
-    enum class EventType {
-        Unknown,
-        MemoryViolation,
-        ApiHook,
-        FileAccess,
-        RegistryChange
-    };
+struct InterceptEvent {
+    std::string api;
+    DWORD       callerPid;
+    DWORD       targetPid;
+    std::string descricao;
+    bool        bloqueado;
+};
 
-    struct InterceptedEvent {
-        EventType type;
-        std::string description;
-        int priority;
-    };
+class EventInterceptor {
+public:
+    EventInterceptor();
+    ~EventInterceptor();
 
-    class EventInterceptor {
-    public:
-        using EventHandler = std::function<void(const InterceptedEvent&)>;
+    bool initialize();
+    void shutdown();
 
-        void registerHandler(EventHandler handler);
-        void unregisterHandler(const EventHandler& handler);
+    // Configuração
+    void add_whitelist(DWORD pid);
+    void remove_whitelist(DWORD pid);
+    void clear_whitelist();
 
-        void simulateEvent(EventType type, std::string description, int priority);
+    void set_block_mode(bool enabled);
 
-    private:
-        std::map<size_t, EventHandler> m_handlers;
-        std::atomic<size_t> m_nextHandlerId;
-    };
+    // Últimos eventos
+    std::vector<InterceptEvent> last_events() const;
 
-}
+private:
+    // Hooks internos
+    static HANDLE WINAPI hkOpenProcess(DWORD access, BOOL inherit, DWORD pid);
+    static BOOL   WINAPI hkWriteProcessMemory(HANDLE hProc, LPVOID base, LPCVOID buf, SIZE_T sz, SIZE_T* written);
+    static BOOL   WINAPI hkReadProcessMemory(HANDLE hProc, LPCVOID base, LPVOID buf, SIZE_T sz, SIZE_T* read);
+    static HANDLE WINAPI hkCreateRemoteThread(HANDLE hProc, LPSECURITY_ATTRIBUTES, SIZE_T, LPTHREAD_START_ROUTINE, LPVOID, DWORD, LPDWORD);
+
+    // Helpers
+    static DWORD get_pid_from_handle(HANDLE hProc);
+    static void log_event(const InterceptEvent& ev);
+
+private:
+    static inline std::unordered_set<DWORD> whitelist_;
+    static inline std::vector<InterceptEvent> eventos_;
+    static inline std::atomic<bool> blockMode_{true};
+    static inline bool initialized_{false};
+};
+
+} // namespace rgs::sdk::protection

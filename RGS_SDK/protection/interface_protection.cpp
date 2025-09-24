@@ -1,635 +1,295 @@
 #include "interface_protection.hpp"
+
+#include <tlhelp32.h>
 #include <psapi.h>
+#include <dwmapi.h>
 #include <algorithm>
-#include <cmath>
-#include <numeric>
+
+#pragma comment(lib, "dwmapi.lib")
 
 namespace rgs::sdk::protection {
 
-    // Static instance for hook procedures
-    InterfaceProtection* InterfaceProtection::s_instance = nullptr;
+InterfaceProtection::InterfaceProtection() = default;
+InterfaceProtection::~InterfaceProtection() { shutdown(); }
 
-    InterfaceProtection::InterfaceProtection() {
-        s_instance = this;
-    }
+bool InterfaceProtection::initialize() {
+    initialized_ = true;
+    return true;
+}
 
-    InterfaceProtection::~InterfaceProtection() {
-        shutdown();
-        s_instance = nullptr;
-    }
+void InterfaceProtection::shutdown() {
+    initialized_ = false;
+    eventos_.clear();
+}
 
-    bool InterfaceProtection::initialize() {
-        if (m_initialized) {
-            return true;
-        }
+std::vector<InterfaceThreat> InterfaceProtection::last_events() const {
+    return eventos_;
+}
 
-        m_initialized = true;
-        return true;
-    }
+// ————————————————————————— Varreduras —————————————————————————
 
-    void InterfaceProtection::shutdown() {
-        if (!m_initialized) {
-            return;
-        }
+std::vector<InterfaceThreat> InterfaceProtection::scan_windows_attributes() {
+    eventos_.clear();
+    EnumWindows(enum_windows_proc, reinterpret_cast<LPARAM>(this));
+    return eventos_;
+}
 
-        disableWindowProtection();
-        disableInputMonitoring();
+std::vector<InterfaceThreat> InterfaceProtection::scan_overlay_modules() {
+    std::vector<InterfaceThreat> out;
 
-        m_knownWindows.clear();
-        m_windowProcessMap.clear();
-        m_inputHistory.clear();
-        m_detectedThreats.clear();
+    // Procura módulos conhecidos de overlay/stream/record (lista expandível)
+    // OBS, NVIDIA Share, Discord Overlay, RTSS, Steam Overlay
+    static const std::vector<std::string> suspects = {
+        "obs.dll", "obs32.dll", "obs64.dll",
+        "graphics-hook.dll", "libobs.dll",
+        "nvspcap.dll", "nvspcap64.dll", "nvosd.dll",
+        "discordhook.dll", "discordhook64.dll",
+        "RTSSHooks.dll", "RTSSHooks64.dll", "RTSS.exe",
+        "gameoverlayrenderer.dll", "gameoverlayui.exe"
+    };
 
-        m_initialized = false;
-    }
+    // Enumera processos
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return out;
 
-    bool InterfaceProtection::enableWindowProtection() {
-        if (m_windowProtectionEnabled) {
-            return true;
-        }
-
-        // Initialize window tracking
-        EnumWindows(enumWindowsProc, reinterpret_cast<LPARAM>(this));
-
-        m_windowProtectionEnabled = true;
-        return true;
-    }
-
-    void InterfaceProtection::disableWindowProtection() {
-        if (!m_windowProtectionEnabled) {
-            return;
-        }
-
-        m_windowProtectionEnabled = false;
-    }
-
-    std::vector<WindowThreatDetection> InterfaceProtection::scanForWindowThreats() {
-        std::vector<WindowThreatDetection> threats;
-
-        if (!m_windowProtectionEnabled) {
-            return threats;
-        }
-
-        // Enumerate all windows and check for threats
-        EnumWindows(enumWindowsProc, reinterpret_cast<LPARAM>(this));
-
-        // Check for overlays
-        if (m_overlayDetectionEnabled && detectOverlays()) {
-            WindowThreatDetection threat;
-            threat.type = InterfaceThreat::OverlayAttack;
-            threat.targetWindow = GetForegroundWindow();
-            threat.description = "Suspicious overlay detected";
-            threats.push_back(threat);
-        }
-
-        // Check for window manipulation
-        if (detectWindowManipulation()) {
-            WindowThreatDetection threat;
-            threat.type = InterfaceThreat::WindowManipulation;
-            threat.targetWindow = GetForegroundWindow();
-            threat.description = "Window manipulation detected";
-            threats.push_back(threat);
-        }
-
-        return threats;
-    }
-
-    bool InterfaceProtection::enableInputMonitoring() {
-        if (m_inputMonitoringEnabled) {
-            return true;
-        }
-
-        // Install low-level keyboard hook
-        m_keyboardHook = SetWindowsHookExW(WH_KEYBOARD_LL, lowLevelKeyboardProc, 
-                                          GetModuleHandle(NULL), 0);
-        if (!m_keyboardHook) {
-            return false;
-        }
-
-        // Install low-level mouse hook
-        m_mouseHook = SetWindowsHookExW(WH_MOUSE_LL, lowLevelMouseProc, 
-                                       GetModuleHandle(NULL), 0);
-        if (!m_mouseHook) {
-            UnhookWindowsHookEx(m_keyboardHook);
-            m_keyboardHook = NULL;
-            return false;
-        }
-
-        m_inputMonitoringEnabled = true;
-        return true;
-    }
-
-    void InterfaceProtection::disableInputMonitoring() {
-        if (!m_inputMonitoringEnabled) {
-            return;
-        }
-
-        if (m_keyboardHook) {
-            UnhookWindowsHookEx(m_keyboardHook);
-            m_keyboardHook = NULL;
-        }
-
-        if (m_mouseHook) {
-            UnhookWindowsHookEx(m_mouseHook);
-            m_mouseHook = NULL;
-        }
-
-        m_inputMonitoringEnabled = false;
-    }
-
-    bool InterfaceProtection::validateInput() {
-        if (!m_inputMonitoringEnabled) {
-            return true;
-        }
-
-        // Analyze recent input patterns
-        auto patterns = analyzeInputPatterns();
-        
-        for (const auto& pattern : patterns) {
-            if (pattern.isAutomated) {
-                WindowThreatDetection threat;
-                threat.type = InterfaceThreat::InputAutomation;
-                threat.targetWindow = GetForegroundWindow();
-                threat.description = "Automated input pattern detected";
-                m_detectedThreats.push_back(threat);
-                return false;
+    PROCESSENTRY32 pe{ sizeof(pe) };
+    if (Process32First(snap, &pe)) {
+        do {
+            DWORD pid = pe.th32ProcessID;
+            auto mods = list_process_modules(pid);
+            for (auto& m : mods) {
+                std::string low = m;
+                std::transform(low.begin(), low.end(), low.begin(), ::tolower);
+                for (auto& s : suspects) {
+                    std::string sl = s;
+                    std::transform(sl.begin(), sl.end(), sl.begin(), ::tolower);
+                    if (low.find(sl) != std::string::npos) {
+                        InterfaceThreat t{};
+                        t.hwnd = nullptr;
+                        t.pid = pid;
+                        t.classe = "";
+                        t.titulo = pe.szExeFile;
+                        t.tipo = "OverlayModule";
+                        t.descricao = "Módulo de overlay/stream encontrado: " + m;
+                        t.suspeito = true;
+                        out.push_back(t);
+                    }
+                }
             }
-        }
-
-        return true;
+        } while (Process32Next(snap, &pe));
     }
+    CloseHandle(snap);
 
-    bool InterfaceProtection::detectMacros() {
-        if (!m_macroDetectionEnabled) {
-            return false;
-        }
+    // Merge com eventos
+    eventos_.insert(eventos_.end(), out.begin(), out.end());
+    return out;
+}
 
-        auto patterns = analyzeInputPatterns();
-        
-        for (const auto& pattern : patterns) {
-            if (pattern.isAutomated && detectRepeatingPattern(pattern.events)) {
-                WindowThreatDetection threat;
-                threat.type = InterfaceThreat::MacroDetection;
-                threat.targetWindow = GetForegroundWindow();
-                threat.description = "Macro execution detected";
-                m_detectedThreats.push_back(threat);
-                return true;
-            }
-        }
+std::vector<InterfaceThreat> InterfaceProtection::scan_all() {
+    std::vector<InterfaceThreat> out;
+    auto w = scan_windows_attributes();
+    out.insert(out.end(), w.begin(), w.end());
+    auto m = scan_overlay_modules();
+    out.insert(out.end(), m.begin(), m.end());
+    eventos_ = out;
+    return out;
+}
 
-        return false;
+bool InterfaceProtection::detect_streamproof() {
+    auto all = scan_all();
+    return std::any_of(all.begin(), all.end(), [](const InterfaceThreat& t){ return t.suspeito; });
+}
+
+// ————————————————————————— Correções —————————————————————————
+
+bool InterfaceProtection::remove_exclude_from_capture(HWND hwnd) {
+    // Remove WDA_EXCLUDEFROMCAPTURE (anti-streamproof)
+    DWORD current{};
+    if (!get_window_affinity(hwnd, current)) return false;
+    if (current == WDA_EXCLUDEFROMCAPTURE || current == WDA_MONITOR) {
+        return set_window_affinity(hwnd, WDA_NONE);
     }
+    return true; // já não está excluída
+}
 
-    bool InterfaceProtection::detectAutomation() {
-        if (m_inputHistory.size() < 10) {
-            return false; // Not enough data
-        }
-
-        return isInputPatternAutomated(m_inputHistory);
-    }
-
-    std::vector<InputPattern> InterfaceProtection::analyzeInputPatterns() {
-        std::vector<InputPattern> patterns;
-        
-        if (m_inputHistory.size() < 5) {
-            return patterns; // Not enough data
-        }
-
-        // Group events into patterns (sliding window)
-        const size_t windowSize = 10;
-        for (size_t i = 0; i <= m_inputHistory.size() - windowSize; i++) {
-            InputPattern pattern;
-            pattern.events.assign(m_inputHistory.begin() + i, 
-                                 m_inputHistory.begin() + i + windowSize);
-            
-            if (!pattern.events.empty()) {
-                pattern.totalDuration = pattern.events.back().timestamp - pattern.events.front().timestamp;
-                pattern.averageInterval = static_cast<double>(pattern.totalDuration) / (pattern.events.size() - 1);
-                pattern.isAutomated = isInputPatternAutomated(pattern.events);
-                patterns.push_back(pattern);
-            }
-        }
-
-        return patterns;
-    }
-
-    bool InterfaceProtection::detectOverlays() {
-        return checkWindowLayering() || detectTransparentOverlays();
-    }
-
-    bool InterfaceProtection::detectWindowInjection() {
-        return scanForInjectedWindows();
-    }
-
-    bool InterfaceProtection::detectInputHooks() {
-        return detectKeyboardHooks() || detectMouseHooks();
-    }
-
-    bool InterfaceProtection::detectKeyboardHooks() {
-        // Check for keyboard hooks in the system
-        return checkSetWindowsHookEx();
-    }
-
-    bool InterfaceProtection::detectMouseHooks() {
-        // Check for mouse hooks in the system
-        return checkSetWindowsHookEx();
-    }
-
-    bool InterfaceProtection::detectWindowManipulation() {
-        return detectForegroundChanges();
-    }
-
-    bool InterfaceProtection::detectForegroundChanges() {
-        static HWND lastForeground = NULL;
-        static DWORD lastChangeTime = 0;
-        
-        HWND currentForeground = GetForegroundWindow();
-        DWORD currentTime = GetTickCount();
-        
-        if (currentForeground != lastForeground) {
-            if (currentTime - lastChangeTime < 100) { // Very rapid changes
-                return true;
-            }
-            lastForeground = currentForeground;
-            lastChangeTime = currentTime;
-        }
-        
-        return false;
-    }
-
-    void InterfaceProtection::setInputSensitivity(float sensitivity) {
-        m_inputSensitivity = std::max(0.0f, std::min(1.0f, sensitivity));
-    }
-
-    float InterfaceProtection::getInputSensitivity() const {
-        return m_inputSensitivity;
-    }
-
-    void InterfaceProtection::setMacroDetectionEnabled(bool enabled) {
-        m_macroDetectionEnabled = enabled;
-    }
-
-    void InterfaceProtection::setOverlayDetectionEnabled(bool enabled) {
-        m_overlayDetectionEnabled = enabled;
-    }
-
-    void InterfaceProtection::setHookDetectionEnabled(bool enabled) {
-        m_hookDetectionEnabled = enabled;
-    }
-
-    void InterfaceProtection::setThreatCallback(ThreatCallback callback) {
-        m_threatCallback = callback;
-    }
-
-    // Private helper methods
-
-    BOOL CALLBACK InterfaceProtection::enumWindowsProc(HWND hwnd, LPARAM lParam) {
-        InterfaceProtection* instance = reinterpret_cast<InterfaceProtection*>(lParam);
-        if (instance) {
-            instance->analyzeWindow(hwnd);
+bool InterfaceProtection::uncloak_window(HWND hwnd) {
+    // Remove "cloaking" (janela ocultada pelo DWM) quando possível
+    BOOL cloaked = FALSE;
+    if (SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked, sizeof(cloaked)))) {
+        if (cloaked) {
+            // Não há API pública para "descloaking"; tentativa: mostrar e forçar ativação
+            ShowWindow(hwnd, SW_SHOW);
+            SetWindowPos(hwnd, HWND_TOP, 0,0,0,0, SWP_NOMOVE|SWP_NOSIZE|SWP_SHOWWINDOW);
+            // Se ainda cloaked, apenas reportamos
         }
         return TRUE;
     }
+    return FALSE;
+}
 
-    bool InterfaceProtection::analyzeWindow(HWND hwnd) {
-        if (!IsWindow(hwnd) || !IsWindowVisible(hwnd)) {
-            return false;
+bool InterfaceProtection::normalize_layered_window(HWND hwnd) {
+    LONG exStyle = GetWindowLongA(hwnd, GWL_EXSTYLE);
+    if (exStyle & WS_EX_LAYERED) {
+        // Remove WS_EX_TRANSPARENT para evitar "pass-through"
+        LONG newStyle = exStyle & ~WS_EX_TRANSPARENT;
+        SetWindowLongA(hwnd, GWL_EXSTYLE, newStyle);
+
+        // Ajusta alpha para 255 (totalmente visível)
+        BYTE alpha = 255;
+        COLORREF crKey = 0;
+        DWORD flags = 0;
+        if (GetLayeredWindowAttributes(hwnd, &crKey, &alpha, &flags)) {
+            SetLayeredWindowAttributes(hwnd, crKey, 255, flags | LWA_ALPHA);
         }
-
-        // Add to known windows
-        m_knownWindows.insert(hwnd);
-
-        // Get process information
-        DWORD processId;
-        GetWindowThreadProcessId(hwnd, &processId);
-        std::string processName = getWindowProcessName(hwnd);
-        m_windowProcessMap[hwnd] = processName;
-
-        // Check if window is suspicious
-        if (isWindowSuspicious(hwnd)) {
-            WindowThreatDetection threat;
-            threat.type = InterfaceThreat::WindowManipulation;
-            threat.targetWindow = hwnd;
-            threat.processId = processId;
-            threat.processName = processName;
-            threat.description = "Suspicious window detected: " + processName;
-            m_detectedThreats.push_back(threat);
-
-            if (m_threatCallback) {
-                m_threatCallback(threat);
-            }
-            return true;
-        }
-
-        return false;
+        return true;
     }
+    return false;
+}
 
-    bool InterfaceProtection::isWindowSuspicious(HWND hwnd) {
-        // Check window class name
-        char className[256];
-        GetClassNameA(hwnd, className, sizeof(className));
-        std::string classNameStr = className;
-        
-        // Suspicious class names
-        std::vector<std::string> suspiciousClasses = {
-            "CheatEngine", "Cheat Engine", "CE", "OllyDbg", "x64dbg",
-            "IDA", "WinAPIOverride", "API Monitor", "Process Hacker"
-        };
-
-        for (const auto& suspicious : suspiciousClasses) {
-            if (classNameStr.find(suspicious) != std::string::npos) {
-                return true;
-            }
+void InterfaceProtection::enforce_capture_visibility() {
+    // Aplica correções em todas janelas suspeitas marcadas como streamproof
+    for (auto& t : eventos_) {
+        if (!t.hwnd) continue;
+        if (t.tipo == "ExclusionFromCapture") {
+            remove_exclude_from_capture(t.hwnd);
+        } else if (t.tipo == "LayeredTransparent") {
+            normalize_layered_window(t.hwnd);
+        } else if (t.tipo == "Cloaked") {
+            uncloak_window(t.hwnd);
         }
-
-        // Check window title
-        char windowTitle[256];
-        GetWindowTextA(hwnd, windowTitle, sizeof(windowTitle));
-        std::string titleStr = windowTitle;
-        
-        std::vector<std::string> suspiciousTitles = {
-            "cheat", "hack", "trainer", "mod", "inject", "debug",
-            "memory", "process", "hook", "bot", "macro"
-        };
-
-        std::transform(titleStr.begin(), titleStr.end(), titleStr.begin(), ::tolower);
-        for (const auto& suspicious : suspiciousTitles) {
-            if (titleStr.find(suspicious) != std::string::npos) {
-                return true;
-            }
-        }
-
-        return false;
     }
+}
 
-    std::string InterfaceProtection::getWindowProcessName(HWND hwnd) {
-        DWORD processId;
-        GetWindowThreadProcessId(hwnd, &processId);
-        
-        HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, processId);
-        if (hProcess) {
-            char processName[MAX_PATH];
-            if (GetModuleBaseNameA(hProcess, NULL, processName, sizeof(processName))) {
-                CloseHandle(hProcess);
-                return std::string(processName);
-            }
-            CloseHandle(hProcess);
-        }
-        
-        return "Unknown";
-    }
+// ————————————————————————— Helpers —————————————————————————
 
-    LRESULT CALLBACK InterfaceProtection::lowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
-        if (nCode >= 0 && s_instance && s_instance->m_inputMonitoringEnabled) {
-            KBDLLHOOKSTRUCT* pkbhs = (KBDLLHOOKSTRUCT*)lParam;
-            
-            InputEvent event;
-            event.timestamp = GetTickCount();
-            event.position = {0, 0}; // Keyboard doesn't have position
-            event.inputType = 1; // Keyboard
-            event.data.resize(sizeof(KBDLLHOOKSTRUCT));
-            memcpy(event.data.data(), pkbhs, sizeof(KBDLLHOOKSTRUCT));
-            
-            s_instance->recordInputEvent(1, (BYTE*)pkbhs, sizeof(KBDLLHOOKSTRUCT));
-        }
-        
-        return CallNextHookEx(s_instance ? s_instance->m_keyboardHook : NULL, nCode, wParam, lParam);
-    }
+BOOL CALLBACK InterfaceProtection::enum_windows_proc(HWND hwnd, LPARAM lParam) {
+    auto self = reinterpret_cast<InterfaceProtection*>(lParam);
 
-    LRESULT CALLBACK InterfaceProtection::lowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
-        if (nCode >= 0 && s_instance && s_instance->m_inputMonitoringEnabled) {
-            MSLLHOOKSTRUCT* pmshs = (MSLLHOOKSTRUCT*)lParam;
-            
-            InputEvent event;
-            event.timestamp = GetTickCount();
-            event.position = pmshs->pt;
-            event.inputType = 2; // Mouse
-            event.data.resize(sizeof(MSLLHOOKSTRUCT));
-            memcpy(event.data.data(), pmshs, sizeof(MSLLHOOKSTRUCT));
-            
-            s_instance->recordInputEvent(2, (BYTE*)pmshs, sizeof(MSLLHOOKSTRUCT));
-        }
-        
-        return CallNextHookEx(s_instance ? s_instance->m_mouseHook : NULL, nCode, wParam, lParam);
-    }
+    // Ignora janelas inválidas ou de outros desktops
+    if (!IsWindow(hwnd)) return TRUE;
 
-    void InterfaceProtection::recordInputEvent(DWORD inputType, const BYTE* data, size_t dataSize) {
-        InputEvent event;
-        event.timestamp = GetTickCount();
-        event.inputType = inputType;
-        
-        if (inputType == 2 && dataSize >= sizeof(MSLLHOOKSTRUCT)) { // Mouse
-            MSLLHOOKSTRUCT* mouseData = (MSLLHOOKSTRUCT*)data;
-            event.position = mouseData->pt;
-        } else {
-            event.position = {0, 0};
-        }
-        
-        event.data.resize(dataSize);
-        memcpy(event.data.data(), data, dataSize);
-        
-        m_inputHistory.push_back(event);
-        
-        // Limit history size
-        if (m_inputHistory.size() > m_maxInputHistorySize) {
-            m_inputHistory.erase(m_inputHistory.begin(), 
-                                m_inputHistory.begin() + (m_inputHistory.size() - m_maxInputHistorySize));
+    InterfaceThreat t{};
+    t.hwnd = hwnd;
+    t.pid = self->window_pid(hwnd);
+    t.classe = self->window_class(hwnd);
+    t.titulo = self->window_title(hwnd);
+    t.suspeito = false;
+
+    // 1) Verifica Display Affinity (excluir de captura)
+    DWORD affinity{};
+    if (self->get_window_affinity(hwnd, affinity)) {
+        if (affinity == WDA_EXCLUDEFROMCAPTURE) {
+            t.tipo = "ExclusionFromCapture";
+            t.descricao = "Janela marcada como excluída da captura (anti-stream) via DisplayAffinity";
+            t.suspeito = true;
+            self->eventos_.push_back(t);
+            // Continua análise para acumular múltiplos motivos
         }
     }
 
-    bool InterfaceProtection::isInputPatternAutomated(const std::vector<InputEvent>& events) {
-        if (events.size() < 5) {
-            return false;
-        }
-
-        // Calculate entropy of input timing
-        double entropy = calculateInputEntropy(events);
-        
-        // Low entropy indicates automation
-        double threshold = 1.0 - m_inputSensitivity; // Higher sensitivity = lower threshold
-        
-        return entropy < threshold || analyzeTimingPatterns(events);
+    // 2) Layered + Transparent (comportamento pass-through invisível à captura)
+    if (self->is_layered_transparent(hwnd)) {
+        InterfaceThreat lt = t;
+        lt.tipo = "LayeredTransparent";
+        lt.descricao = "Janela layered com transparência/pass-through (pode burlar captura)";
+        lt.suspeito = true;
+        self->eventos_.push_back(lt);
     }
 
-    double InterfaceProtection::calculateInputEntropy(const std::vector<InputEvent>& events) {
-        if (events.size() < 2) {
-            return 1.0; // Maximum entropy for insufficient data
-        }
+    // 3) DWM cloaking
+    if (self->is_cloaked(hwnd)) {
+        InterfaceThreat ck = t;
+        ck.tipo = "Cloaked";
+        ck.descricao = "Janela cloaked pelo DWM (pode ocultar overlay em captura)";
+        ck.suspeito = true;
+        self->eventos_.push_back(ck);
+    }
 
-        std::vector<DWORD> intervals;
-        for (size_t i = 1; i < events.size(); i++) {
-            intervals.push_back(events[i].timestamp - events[i-1].timestamp);
-        }
+    return TRUE;
+}
 
-        // Group intervals into buckets (10ms precision)
-        std::unordered_map<DWORD, int> buckets;
-        for (DWORD interval : intervals) {
-            DWORD bucket = (interval / 10) * 10; // Round to nearest 10ms
-            buckets[bucket]++;
-        }
+bool InterfaceProtection::get_window_affinity(HWND hwnd, DWORD& affinity) const {
+    // GetWindowDisplayAffinity está em user32.dll (Win10+)
+    typedef BOOL (WINAPI* GetWDA)(HWND, DWORD*);
+    HMODULE hUser = GetModuleHandleA("user32.dll");
+    if (!hUser) return false;
+    auto fn = reinterpret_cast<GetWDA>(GetProcAddress(hUser, "GetWindowDisplayAffinity"));
+    if (!fn) return false;
+    return fn(hwnd, &affinity) != 0;
+}
 
-        // Calculate Shannon entropy
-        double entropy = 0.0;
-        size_t totalIntervals = intervals.size();
-        
-        for (const auto& [bucket, count] : buckets) {
-            double probability = static_cast<double>(count) / totalIntervals;
-            if (probability > 0) {
-                entropy -= probability * log2(probability);
+bool InterfaceProtection::set_window_affinity(HWND hwnd, DWORD affinity) const {
+    typedef BOOL (WINAPI* SetWDA)(HWND, DWORD);
+    HMODULE hUser = GetModuleHandleA("user32.dll");
+    if (!hUser) return false;
+    auto fn = reinterpret_cast<SetWDA>(GetProcAddress(hUser, "SetWindowDisplayAffinity"));
+    if (!fn) return false;
+    return fn(hwnd, affinity) != 0;
+}
+
+bool InterfaceProtection::is_layered_transparent(HWND hwnd) const {
+    LONG exStyle = GetWindowLongA(hwnd, GWL_EXSTYLE);
+    if ((exStyle & WS_EX_LAYERED) != 0) {
+        BYTE alpha = 255;
+        COLORREF crKey = 0;
+        DWORD flags = 0;
+        if (GetLayeredWindowAttributes(hwnd, &crKey, &alpha, &flags)) {
+            // Transparência forte + TRANSPARENT sugere stream-proof pass-through
+            if ((exStyle & WS_EX_TRANSPARENT) != 0) return true;
+            if ((flags & LWA_ALPHA) && alpha < 60) return true; // quase invisível
+        }
+    }
+    return false;
+}
+
+bool InterfaceProtection::is_cloaked(HWND hwnd) const {
+    BOOL cloaked = FALSE;
+    if (SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked, sizeof(cloaked)))) {
+        return cloaked != FALSE;
+    }
+    return false;
+}
+
+std::string InterfaceProtection::window_class(HWND hwnd) const {
+    char cls[256]{};
+    GetClassNameA(hwnd, cls, sizeof(cls));
+    return std::string(cls);
+}
+
+std::string InterfaceProtection::window_title(HWND hwnd) const {
+    char title[256]{};
+    GetWindowTextA(hwnd, title, sizeof(title));
+    return std::string(title);
+}
+
+DWORD InterfaceProtection::window_pid(HWND hwnd) const {
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    return pid;
+}
+
+std::vector<std::string> InterfaceProtection::list_process_modules(DWORD pid) const {
+    std::vector<std::string> paths;
+    HANDLE hProc = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+    if (!hProc) return paths;
+
+    HMODULE mods[1024]; DWORD needed{};
+    if (EnumProcessModules(hProc, mods, sizeof(mods), &needed)) {
+        size_t count = needed / sizeof(HMODULE);
+        for (size_t i = 0; i < count; ++i) {
+            char path[MAX_PATH]{};
+            if (GetModuleFileNameExA(hProc, mods[i], path, sizeof(path))) {
+                paths.emplace_back(path);
             }
         }
-
-        // Normalize entropy (0-1 scale)
-        double maxEntropy = log2(static_cast<double>(buckets.size()));
-        return maxEntropy > 0 ? entropy / maxEntropy : 0.0;
     }
+    CloseHandle(hProc);
+    return paths;
+}
 
-    bool InterfaceProtection::detectRepeatingPattern(const std::vector<InputEvent>& events) {
-        if (events.size() < 6) {
-            return false;
-        }
-
-        // Look for repeating timing patterns
-        for (size_t patternLen = 2; patternLen <= events.size() / 3; patternLen++) {
-            std::vector<DWORD> pattern;
-            
-            // Extract timing pattern
-            for (size_t i = 1; i <= patternLen && i < events.size(); i++) {
-                pattern.push_back(events[i].timestamp - events[i-1].timestamp);
-            }
-
-            // Check if this pattern repeats
-            int repetitions = 0;
-            for (size_t i = patternLen; i + patternLen < events.size(); i += patternLen) {
-                bool matches = true;
-                for (size_t j = 0; j < patternLen - 1 && i + j + 1 < events.size(); j++) {
-                    DWORD currentInterval = events[i + j + 1].timestamp - events[i + j].timestamp;
-                    DWORD patternInterval = pattern[j];
-                    
-                    // Allow 5ms tolerance
-                    if (abs(static_cast<int>(currentInterval - patternInterval)) > 5) {
-                        matches = false;
-                        break;
-                    }
-                }
-                
-                if (matches) {
-                    repetitions++;
-                } else {
-                    break;
-                }
-            }
-
-            // If pattern repeats at least 2 times, it's likely automated
-            if (repetitions >= 2) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    bool InterfaceProtection::analyzeTimingPatterns(const std::vector<InputEvent>& events) {
-        if (events.size() < 10) {
-            return false;
-        }
-
-        std::vector<DWORD> intervals;
-        for (size_t i = 1; i < events.size(); i++) {
-            intervals.push_back(events[i].timestamp - events[i-1].timestamp);
-        }
-
-        // Calculate standard deviation of intervals
-        double mean = std::accumulate(intervals.begin(), intervals.end(), 0.0) / intervals.size();
-        double variance = 0.0;
-        
-        for (DWORD interval : intervals) {
-            variance += (interval - mean) * (interval - mean);
-        }
-        variance /= intervals.size();
-        
-        double stdDev = sqrt(variance);
-        
-        // Very low standard deviation indicates automation (too consistent)
-        return stdDev < 5.0; // Less than 5ms variation
-    }
-
-    bool InterfaceProtection::checkSetWindowsHookEx() {
-        // This is simplified - a real implementation would need to inspect
-        // the hook chain or use more advanced techniques
-        HHOOK testHook = SetWindowsHookExW(WH_KEYBOARD_LL, 
-                                          [](int code, WPARAM w, LPARAM l) -> LRESULT {
-                                              return CallNextHookEx(NULL, code, w, l);
-                                          }, 
-                                          GetModuleHandle(NULL), 0);
-        if (testHook) {
-            UnhookWindowsHookEx(testHook);
-            return false; // No interference detected
-        }
-        
-        return true; // Hook installation failed, might indicate existing hooks
-    }
-
-    bool InterfaceProtection::checkWindowLayering() {
-        HWND foreground = GetForegroundWindow();
-        if (!foreground) return false;
-
-        // Check if there are windows above the foreground window
-        HWND topWindow = GetTopWindow(NULL);
-        while (topWindow) {
-            if (topWindow != foreground && IsWindowVisible(topWindow)) {
-                // Check if this window overlaps with foreground
-                RECT foregroundRect, topRect;
-                if (GetWindowRect(foreground, &foregroundRect) && 
-                    GetWindowRect(topWindow, &topRect)) {
-                    
-                    // Check for overlap
-                    if (!(topRect.right < foregroundRect.left || 
-                          topRect.left > foregroundRect.right ||
-                          topRect.bottom < foregroundRect.top || 
-                          topRect.top > foregroundRect.bottom)) {
-                        return true; // Overlapping window found
-                    }
-                }
-            }
-            topWindow = GetNextWindow(topWindow, GW_HWNDNEXT);
-        }
-
-        return false;
-    }
-
-    bool InterfaceProtection::detectTransparentOverlays() {
-        // Check for windows with transparency that might be overlays
-        HWND foreground = GetForegroundWindow();
-        if (!foreground) return false;
-
-        HWND window = GetTopWindow(NULL);
-        while (window) {
-            if (window != foreground && IsWindowVisible(window)) {
-                // Check window attributes for transparency
-                LONG exStyle = GetWindowLongA(window, GWL_EXSTYLE);
-                if (exStyle & WS_EX_LAYERED) {
-                    BYTE alpha;
-                    COLORREF colorKey;
-                    DWORD flags;
-                    
-                    if (GetLayeredWindowAttributes(window, &colorKey, &alpha, &flags)) {
-                        if (alpha < 255 || (flags & LWA_COLORKEY)) {
-                            return true; // Transparent overlay detected
-                        }
-                    }
-                }
-            }
-            window = GetNextWindow(window, GW_HWNDNEXT);
-        }
-
-        return false;
-    }
-
-    bool InterfaceProtection::scanForInjectedWindows() {
-        // This would require more advanced techniques to detect injected windows
-        // For now, we'll check for windows from suspicious processes
-        return false;
-    }
+bool InterfaceProtection::is_known_overlay_module(const std::string& path) const {
+    // Já coberto em scan_overlay_modules(), função disponível para extensões futuras
+    return false;
+}
 
 } // namespace rgs::sdk::protection

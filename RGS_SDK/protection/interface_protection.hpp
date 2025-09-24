@@ -1,158 +1,88 @@
 #pragma once
 
 #include <windows.h>
-#include <vector>
 #include <string>
-#include <optional>
-#include <unordered_set>
-#include <unordered_map>
-#include <functional>
+#include <vector>
+#include <atomic>
 
 namespace rgs::sdk::protection {
 
-    enum class InterfaceThreat {
-        Unknown,
-        WindowManipulation,
-        InputAutomation,
-        MacroDetection,
-        OverlayAttack,
-        ClickBot,
-        KeyboardHook,
-        MouseHook
-    };
+// Constantes do Display Affinity (Win10/11)
+#ifndef WDA_NONE
+#define WDA_NONE 0x00000000
+#endif
+#ifndef WDA_MONITOR
+#define WDA_MONITOR 0x00000001
+#endif
+#ifndef WDA_EXCLUDEFROMCAPTURE
+// Valor oficial é 0x00000011 em builds recentes (Win11+)
+#define WDA_EXCLUDEFROMCAPTURE 0x00000011
+#endif
 
-    struct InputEvent {
-        DWORD timestamp;
-        POINT position;
-        DWORD inputType; // Mouse, keyboard, etc.
-        std::vector<BYTE> data;
-    };
+// Atributos DWM (não expostos em headers antigos)
+#ifndef DWMWA_CLOAK
+#define DWMWA_CLOAK 13
+#endif
+#ifndef DWMWA_CLOAKED
+#define DWMWA_CLOAKED 14
+#endif
 
-    struct WindowThreatDetection {
-        InterfaceThreat type;
-        HWND targetWindow;
-        std::string description;
-        std::string processName;
-        DWORD processId;
-    };
+struct InterfaceThreat {
+    HWND        hwnd;
+    DWORD       pid;
+    std::string classe;
+    std::string titulo;
+    std::string tipo;        // "ExclusionFromCapture", "LayeredTransparent", "Cloaked", "OverlayModule"
+    std::string descricao;
+    bool        suspeito;
+};
 
-    struct InputPattern {
-        std::vector<InputEvent> events;
-        DWORD totalDuration;
-        double averageInterval;
-        bool isAutomated;
-    };
+class InterfaceProtection {
+public:
+    InterfaceProtection();
+    ~InterfaceProtection();
 
-    class InterfaceProtection {
-    public:
-        InterfaceProtection();
-        ~InterfaceProtection();
+    bool initialize();
+    void shutdown();
 
-        // Initialize interface protection
-        bool initialize();
-        void shutdown();
+    // Varreduras principais
+    std::vector<InterfaceThreat> scan_windows_attributes(); // WDA, WS_EX_LAYERED/TRANSPARENT, DWM cloaking
+    std::vector<InterfaceThreat> scan_overlay_modules();    // Módulos/overlays comuns (OBS/NVIDIA/Discord/RTSS)
 
-        // Window protection
-        bool enableWindowProtection();
-        void disableWindowProtection();
-        std::vector<WindowThreatDetection> scanForWindowThreats();
-        
-        // Input validation and monitoring
-        bool enableInputMonitoring();
-        void disableInputMonitoring();
-        bool validateInput();
-        
-        // Macro and automation detection
-        bool detectMacros();
-        bool detectAutomation();
-        std::vector<InputPattern> analyzeInputPatterns();
-        
-        // Overlay and injection protection
-        bool detectOverlays();
-        bool detectWindowInjection();
-        
-        // Hook detection
-        bool detectInputHooks();
-        bool detectKeyboardHooks();
-        bool detectMouseHooks();
-        
-        // Window manipulation detection
-        bool detectWindowManipulation();
-        bool detectForegroundChanges();
-        
-        // Configuration
-        void setInputSensitivity(float sensitivity); // 0.0 - 1.0
-        float getInputSensitivity() const;
-        void setMacroDetectionEnabled(bool enabled);
-        void setOverlayDetectionEnabled(bool enabled);
-        void setHookDetectionEnabled(bool enabled);
+    // Agregado
+    std::vector<InterfaceThreat> scan_all();
+    bool detect_streamproof();
 
-        // Callbacks for custom threat handling
-        using ThreatCallback = std::function<void(const WindowThreatDetection&)>;
-        void setThreatCallback(ThreatCallback callback);
+    // Ações de correção (melhor esforço e seguras)
+    bool remove_exclude_from_capture(HWND hwnd);  // SetWindowDisplayAffinity(WDA_NONE)
+    bool uncloak_window(HWND hwnd);               // DWM: remove cloaking quando possível
+    bool normalize_layered_window(HWND hwnd);     // Remove WS_EX_TRANSPARENT e alpha excessiva
 
-    private:
-        // Window enumeration and analysis
-        static BOOL CALLBACK enumWindowsProc(HWND hwnd, LPARAM lParam);
-        bool analyzeWindow(HWND hwnd);
-        bool isWindowSuspicious(HWND hwnd);
-        std::string getWindowProcessName(HWND hwnd);
-        
-        // Input monitoring helpers
-        static LRESULT CALLBACK lowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
-        static LRESULT CALLBACK lowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam);
-        void recordInputEvent(DWORD inputType, const BYTE* data, size_t dataSize);
-        
-        // Pattern analysis
-        bool isInputPatternAutomated(const std::vector<InputEvent>& events);
-        double calculateInputEntropy(const std::vector<InputEvent>& events);
-        bool detectRepeatingPattern(const std::vector<InputEvent>& events);
-        bool analyzeTimingPatterns(const std::vector<InputEvent>& events);
-        
-        // Hook detection helpers
-        bool checkSetWindowsHookEx();
-        bool scanForHookChains();
-        bool detectInlineInputHooks();
-        
-        // Overlay detection helpers
-        bool checkWindowLayering();
-        bool detectTransparentOverlays();
-        bool scanForInjectedWindows();
-        
-        // Window manipulation helpers
-        bool monitorWindowChanges();
-        bool detectWindowClassChanges();
-        bool checkWindowProperties();
+    // Aplicação ampla (em todas janelas suspeitas encontradas)
+    void enforce_capture_visibility();
 
-        // State management
-        bool m_initialized = false;
-        bool m_windowProtectionEnabled = false;
-        bool m_inputMonitoringEnabled = false;
-        bool m_macroDetectionEnabled = true;
-        bool m_overlayDetectionEnabled = true;
-        bool m_hookDetectionEnabled = true;
-        
-        // Configuration
-        float m_inputSensitivity = 0.7f;
-        
-        // Hooks
-        HHOOK m_keyboardHook = NULL;
-        HHOOK m_mouseHook = NULL;
-        
-        // Input tracking
-        std::vector<InputEvent> m_inputHistory;
-        DWORD m_maxInputHistorySize = 1000;
-        
-        // Window tracking
-        std::unordered_set<HWND> m_knownWindows;
-        std::unordered_map<HWND, std::string> m_windowProcessMap;
-        
-        // Threat detection
-        std::vector<WindowThreatDetection> m_detectedThreats;
-        ThreatCallback m_threatCallback;
-        
-        // Static instance for hook procedures
-        static InterfaceProtection* s_instance;
-    };
+    // Últimos eventos
+    std::vector<InterfaceThreat> last_events() const;
+
+private:
+    // Helpers
+    static BOOL CALLBACK enum_windows_proc(HWND hwnd, LPARAM lParam);
+    bool get_window_affinity(HWND hwnd, DWORD& affinity) const;
+    bool set_window_affinity(HWND hwnd, DWORD affinity) const;
+    bool is_layered_transparent(HWND hwnd) const;
+    bool is_cloaked(HWND hwnd) const;
+
+    std::string window_class(HWND hwnd) const;
+    std::string window_title(HWND hwnd) const;
+    DWORD window_pid(HWND hwnd) const;
+
+    // Overlay modules scan
+    std::vector<std::string> list_process_modules(DWORD pid) const;
+    bool is_known_overlay_module(const std::string& path) const;
+
+private:
+    std::atomic<bool> initialized_{false};
+    std::vector<InterfaceThreat> eventos_;
+};
 
 } // namespace rgs::sdk::protection
