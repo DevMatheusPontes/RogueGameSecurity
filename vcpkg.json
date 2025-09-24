@@ -1,17 +1,19 @@
 {
   "name": "roguegamesecurity",
   "version": "0.1.0",
+  "builtin-baseline": "b1b19307e2d2ec1eefbdb7ea069de7d4bcd31f01",
+  "supports": "windows & x86",
   "dependencies": [
     "boost-asio",
-    "boost-log",
-    "boost-format",
-    "boost-property-tree",
-    "boost-crc",
-    "boost-lockfree",
     "boost-circular-buffer",
-    "boost-serialization",
-    "boost-multi-index",
+    "boost-crc",
     "boost-filesystem",
+    "boost-format",
+    "boost-lockfree",
+    "boost-log",
+    "boost-multi-index",
+    "boost-property-tree",
+    "boost-serialization",
     "boost-test",
     "minhook"
   ]

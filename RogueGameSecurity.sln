@@ -2,29 +2,60 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RGS_Central", "RGS_Central\RGS_Central.vcxproj", "{b3ead768-e896-4d8c-bf0c-95ea8ee3d8c8}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RGS_Central", "RGS_Central\RGS_Central.vcxproj", "{B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RGS_Server", "RGS_Server\RGS_Server.vcxproj", "{7c80eecd-29d5-4c68-b687-4d647d410d87}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RGS_Server", "RGS_Server\RGS_Server.vcxproj", "{7C80EECD-29D5-4C68-B687-4D647D410D87}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RGS_Client", "RGS_Client\RGS_Client.vcxproj", "{c9e5b075-3689-46be-b76b-5bc1829b1224}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RGS_Client", "RGS_Client\RGS_Client.vcxproj", "{C9E5B075-3689-46BE-B76B-5BC1829B1224}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "RGS_SDK", "RGS_SDK", "{A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "hooks", "hooks", "{B1B1B1B1-B1B1-B1B1-B1B1-B1B1B1B1B1B1}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "memory", "memory", "{C2C2C2C2-C2C2-C2C2-C2C2-C2C2C2C2C2C2}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "network", "network", "{D3D3D3D3-D3D3-D3D3-D3D3-D3D3D3D3D3D3}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "protection", "protection", "{E4E4E4E4-E4E4-E4E4-E4E4-E4E4E4E4E4E4}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "security", "security", "{F5F5F5F5-F5F5-F5F5-F5F5-F5F5F5F5F5F5}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "utils", "utils", "{G6G6G6G6-G6G6-G6G6-G6G6-G6G6G6G6G6G6}"
 EndProject
 Global
-    GlobalSection(SolutionConfigurationPlatforms) = preSolution
-        Debug|Win32 = Debug|Win32
-        Release|Win32 = Release|Win32
-    EndGlobalSection
-    GlobalSection(ProjectConfigurationPlatforms) = postSolution
-        {b3ead768-e896-4d8c-bf0c-95ea8ee3d8c8}.Debug|Win32.ActiveCfg = Debug|Win32
-        {b3ead768-e896-4d8c-bf0c-95ea8ee3d8c8}.Debug|Win32.Build.0 = Debug|Win32
-        {b3ead768-e896-4d8c-bf0c-95ea8ee3d8c8}.Release|Win32.ActiveCfg = Release|Win32
-        {b3ead768-e896-4d8c-bf0c-95ea8ee3d8c8}.Release|Win32.Build.0 = Release|Win32
-        {7c80eecd-29d5-4c68-b687-4d647d410d87}.Debug|Win32.ActiveCfg = Debug|Win32
-        {7c80eecd-29d5-4c68-b687-4d647d410d87}.Debug|Win32.Build.0 = Debug|Win32
-        {7c80eecd-29d5-4c68-b687-4d647d410d87}.Release|Win32.ActiveCfg = Release|Win32
-        {7c80eecd-29d5-4c68-b687-4d647d410d87}.Release|Win32.Build.0 = Release|Win32
-        {c9e5b075-3689-46be-b76b-5bc1829b1224}.Debug|Win32.ActiveCfg = Debug|Win32
-        {c9e5b075-3689-46be-b76b-5bc1829b1224}.Debug|Win32.Build.0 = Debug|Win32
-        {c9e5b075-3689-46be-b76b-5bc1829b1224}.Release|Win32.ActiveCfg = Release|Win32
-        {c9e5b075-3689-46be-b76b-5bc1829b1224}.Release|Win32.Build.0 = Release|Win32
-    EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{B1B1B1B1-B1B1-B1B1-B1B1-B1B1B1B1B1B1} = {A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}
+		{C2C2C2C2-C2C2-C2C2-C2C2-C2C2C2C2C2C2} = {A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}
+		{D3D3D3D3-D3D3-D3D3-D3D3-D3D3D3D3D3D3} = {A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}
+		{E4E4E4E4-E4E4-E4E4-E4E4-E4E4E4E4E4E4} = {A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}
+		{F5F5F5F5-F5F5-F5F5-F5F5-F5F5F5F5F5F5} = {A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}
+		{G6G6G6G6-G6G6-G6G6-G6G6-G6G6G6G6G6G6} = {A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}
+	EndGlobalSection
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x86 = Debug|x86
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8}.Debug|x86.ActiveCfg = Debug|Win32
+		{B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8}.Debug|x86.Build.0 = Debug|Win32
+		{B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8}.Release|x86.ActiveCfg = Release|Win32
+		{B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8}.Release|x86.Build.0 = Release|Win32
+		{7C80EECD-29D5-4C68-B687-4D647D410D87}.Debug|x86.ActiveCfg = Debug|Win32
+		{7C80EECD-29D5-4C68-B687-4D647D410D87}.Debug|x86.Build.0 = Debug|Win32
+		{7C80EECD-29D5-4C68-B687-4D647D410D87}.Release|x86.ActiveCfg = Release|Win32
+		{7C80EECD-29D5-4C68-B687-4D647D410D87}.Release|x86.Build.0 = Release|Win32
+		{C9E5B075-3689-46BE-B76B-5BC1829B1224}.Debug|x86.ActiveCfg = Debug|Win32
+		{C9E5B075-3689-46BE-B76B-5BC1829B1224}.Debug|x86.Build.0 = Debug|Win32
+		{C9E5B075-3689-46BE-B76B-5BC1829B1224}.Release|x86.ActiveCfg = Release|Win32
+		{C9E5B075-3689-46BE-B76B-5BC1829B1224}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(StartupProjects) = postSolution
+		{B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8} = {B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {88888888-8888-8888-8888-888888888888}
+	EndGlobalSection
 EndGlobal

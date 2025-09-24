@@ -1,6 +1,7 @@
 #include <iostream>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/signal_set.hpp>
+#include <boost/log/trivial.hpp>
 
 #include "policy_manager.hpp"
 #include "session_manager.hpp"
@@ -14,7 +15,7 @@ int main() {
     // Load configuration
     auto& policyManager = rgs::central::PolicyManager::getInstance();
     if (!policyManager.load("config.json")) {
-        std::cerr << "Failed to load config.json" << std::endl;
+        BOOST_LOG_TRIVIAL(fatal) << "Failed to load config.json";
         return 1;
     }
 
@@ -24,7 +25,7 @@ int main() {
         // Create central components
         rgs::central::SessionManager sessionManager;
         rgs::sdk::network::Dispatcher dispatcher(io_context);
-        rgs::central::Router router(dispatcher, sessionManager);
+        rgs::central::Router router(dispatcher, sessionManager, policyManager);
         rgs::central::HealthMonitor healthMonitor(io_context, sessionManager);
         rgs::central::ShutdownController shutdownController(io_context, sessionManager);
 
@@ -37,11 +38,11 @@ int main() {
         
         server.setSessionHandler([&sessionManager, &dispatcher](std::shared_ptr<rgs::sdk::network::Session> session) {
             sessionManager.add(session);
-            std::cout << "New session connected: " << session->getId() << std::endl;
+            BOOST_LOG_TRIVIAL(info) << "New session connected: " << session->getId();
 
             session->setDisconnectHandler([&sessionManager, session](){
                 sessionManager.remove(session);
-                std::cout << "Session disconnected: " << session->getId() << std::endl;
+                BOOST_LOG_TRIVIAL(info) << "Session disconnected: " << session->getId();
             });
 
             session->setMessageHandler([&dispatcher, session](rgs::sdk::network::Message&& msg){
@@ -52,7 +53,7 @@ int main() {
         server.start();
         healthMonitor.start();
 
-        std::cout << "RGS_Central started on port " << port << std::endl;
+        BOOST_LOG_TRIVIAL(info) << "RGS_Central started on port " << port;
 
         // Wait for a signal to shut down
         boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
@@ -62,10 +63,10 @@ int main() {
 
         io_context.run();
 
-        std::cout << "RGS_Central shut down gracefully." << std::endl;
+        BOOST_LOG_TRIVIAL(info) << "RGS_Central shut down gracefully.";
     }
     catch (const std::exception& e) {
-        std::cerr << "Exception: " << e.what() << std::endl;
+        BOOST_LOG_TRIVIAL(fatal) << "Exception: " << e.what();
         return 1;
     }
 

@@ -1,3 +1,6 @@
+# ⛔️ Pasta de projetos externos (não versionar)
+projectsCodeBase/
+
 # vcpkg directories
 vcpkg_installed/
 packages/
@@ -94,9 +97,7 @@ publish/
 *.pubxml
 *.publishproj
 
-# Microsoft Azure Web App publish settings. Comment the next line if you want to
-# checkin your Azure Web App publish settings, but sensitive information contained
-# in these files may be visible to others.
+# Microsoft Azure Web App publish settings
 *.PublishSettings
 
 # NuGet Packages
@@ -120,9 +121,7 @@ Package.StoreAssociation.xml
 _pkginfo.txt
 
 # Visual Studio cache files
-# files ending in .cache can be ignored
 *.[Cc]ache
-# but keep track of directories ending in .cache
 !*.[Cc]ache/
 
 # Others
@@ -136,20 +135,16 @@ ClientBin/
 *.publishsettings
 orleans.codegen.cs
 
-# Including strong name files can present a security risk 
-# (https://github.com/github/gitignore/pull/2483#issue-259490424)
+# Strong name files (optional)
 #*.snk
 
-# Since there are multiple workflows, uncomment next line to ignore bower_components
-# (https://github.com/github/gitignore/pull/1529#issuecomment-104372622)
+# Bower components (optional)
 #bower_components/
 
 # RIA/Silverlight projects
 Generated_Code/
 
-# Backup & report files from converting an old project file
-# to a newer Visual Studio version. Backup files are not needed,
-# because we have git ;-)
+# Upgrade reports
 _UpgradeReport_Files/
 Backup*/
 UpgradeLog*.XML
@@ -177,13 +172,9 @@ node_modules/
 # Typescript v1 declaration files
 typings/
 
-# Visual Studio 6 build log
+# Visual Studio 6 legacy files
 *.plg
-
-# Visual Studio 6 workspace options file
 *.opt
-
-# Visual Studio 6 auto-generated workspace file (contains which files were open etc.)
 *.vbw
 
 # Visual Studio LightSwitch build output
@@ -212,7 +203,7 @@ paket-files/
 __pycache__/
 *.pyc
 
-# Cake - Uncomment if you are using it
+# Cake
 # tools/**
 # !tools/packages.config
 
@@ -224,3 +215,8 @@ __pycache__/
 *.btm.cs
 *.odx.cs
 *.xsd.cs
+
+_GEMINI.md
+prompts.md
+agent_config.json
+GEMINI.md
