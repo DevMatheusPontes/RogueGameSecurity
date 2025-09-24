@@ -1,3 +1,4 @@
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -11,51 +12,111 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "RGS_SDK", "RGS_SDK", "{A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "hooks", "hooks", "{B1B1B1B1-B1B1-B1B1-B1B1-B1B1B1B1B1B1}"
+	ProjectSection(SolutionItems) = preProject
+		RGS_SDK\hooks\hook_manager.cpp = RGS_SDK\hooks\hook_manager.cpp
+		RGS_SDK\hooks\hook_manager.hpp = RGS_SDK\hooks\hook_manager.hpp
+		RGS_SDK\hooks\reentry_guard.hpp = RGS_SDK\hooks\reentry_guard.hpp
+	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "memory", "memory", "{C2C2C2C2-C2C2-C2C2-C2C2-C2C2C2C2C2C2}"
+	ProjectSection(SolutionItems) = preProject
+		RGS_SDK\memory\memory_access.cpp = RGS_SDK\memory\memory_access.cpp
+		RGS_SDK\memory\memory_access.hpp = RGS_SDK\memory\memory_access.hpp
+		RGS_SDK\memory\offset_registry.cpp = RGS_SDK\memory\offset_registry.cpp
+		RGS_SDK\memory\offset_registry.hpp = RGS_SDK\memory\offset_registry.hpp
+		RGS_SDK\memory\pointer_utils.cpp = RGS_SDK\memory\pointer_utils.cpp
+		RGS_SDK\memory\pointer_utils.hpp = RGS_SDK\memory\pointer_utils.hpp
+		RGS_SDK\memory\scanner.cpp = RGS_SDK\memory\scanner.cpp
+		RGS_SDK\memory\scanner.hpp = RGS_SDK\memory\scanner.hpp
+	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "network", "network", "{D3D3D3D3-D3D3-D3D3-D3D3-D3D3D3D3D3D3}"
+	ProjectSection(SolutionItems) = preProject
+		RGS_SDK\network\dispatcher.cpp = RGS_SDK\network\dispatcher.cpp
+		RGS_SDK\network\dispatcher.hpp = RGS_SDK\network\dispatcher.hpp
+		RGS_SDK\network\message.hpp = RGS_SDK\network\message.hpp
+		RGS_SDK\network\protocol.hpp = RGS_SDK\network\protocol.hpp
+		RGS_SDK\network\session.cpp = RGS_SDK\network\session.cpp
+		RGS_SDK\network\session.hpp = RGS_SDK\network\session.hpp
+		RGS_SDK\network\transport.cpp = RGS_SDK\network\transport.cpp
+		RGS_SDK\network\transport.hpp = RGS_SDK\network\transport.hpp
+	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "protection", "protection", "{E4E4E4E4-E4E4-E4E4-E4E4-E4E4E4E4E4E4}"
+	ProjectSection(SolutionItems) = preProject
+		RGS_SDK\protection\anti_debug.cpp = RGS_SDK\protection\anti_debug.cpp
+		RGS_SDK\protection\anti_debug.hpp = RGS_SDK\protection\anti_debug.hpp
+		RGS_SDK\protection\event_interceptor.cpp = RGS_SDK\protection\event_interceptor.cpp
+		RGS_SDK\protection\event_interceptor.hpp = RGS_SDK\protection\event_interceptor.hpp
+		RGS_SDK\protection\injection_detector.cpp = RGS_SDK\protection\injection_detector.cpp
+		RGS_SDK\protection\injection_detector.hpp = RGS_SDK\protection\injection_detector.hpp
+		RGS_SDK\protection\interface_protection.cpp = RGS_SDK\protection\interface_protection.cpp
+		RGS_SDK\protection\interface_protection.hpp = RGS_SDK\protection\interface_protection.hpp
+		RGS_SDK\protection\memory_protection.cpp = RGS_SDK\protection\memory_protection.cpp
+		RGS_SDK\protection\memory_protection.hpp = RGS_SDK\protection\memory_protection.hpp
+		RGS_SDK\protection\protection_pipeline.cpp = RGS_SDK\protection\protection_pipeline.cpp
+		RGS_SDK\protection\protection_pipeline.hpp = RGS_SDK\protection\protection_pipeline.hpp
+		RGS_SDK\protection\reporter.cpp = RGS_SDK\protection\reporter.cpp
+		RGS_SDK\protection\reporter.hpp = RGS_SDK\protection\reporter.hpp
+	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "security", "security", "{F5F5F5F5-F5F5-F5F5-F5F5-F5F5F5F5F5F5}"
+	ProjectSection(SolutionItems) = preProject
+		RGS_SDK\security\hash.cpp = RGS_SDK\security\hash.cpp
+		RGS_SDK\security\hash.hpp = RGS_SDK\security\hash.hpp
+		RGS_SDK\security\nonce.cpp = RGS_SDK\security\nonce.cpp
+		RGS_SDK\security\nonce.hpp = RGS_SDK\security\nonce.hpp
+		RGS_SDK\security\random.cpp = RGS_SDK\security\random.cpp
+		RGS_SDK\security\random.hpp = RGS_SDK\security\random.hpp
+	EndProjectSection
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "utils", "utils", "{G6G6G6G6-G6G6-G6G6-G6G6-G6G6G6G6G6G6}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "utils", "utils", "{BF4C0C5E-DFC5-4053-8A57-81CF8609C70F}"
+	ProjectSection(SolutionItems) = preProject
+		RGS_SDK\utils\config.cpp = RGS_SDK\utils\config.cpp
+		RGS_SDK\utils\config.hpp = RGS_SDK\utils\config.hpp
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Itens de Solução", "Itens de Solução", "{380A7511-A354-6D7A-0CC0-8FA1F1BA7B6C}"
+	ProjectSection(SolutionItems) = preProject
+		config.json = config.json
+		vcpkg-configuration.json = vcpkg-configuration.json
+		vcpkg.json = vcpkg.json
+	EndProjectSection
 EndProject
 Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8}.Debug|Win32.ActiveCfg = Debug|Win32
+		{B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8}.Debug|Win32.Build.0 = Debug|Win32
+		{B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8}.Release|Win32.ActiveCfg = Release|Win32
+		{B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8}.Release|Win32.Build.0 = Release|Win32
+		{7C80EECD-29D5-4C68-B687-4D647D410D87}.Debug|Win32.ActiveCfg = Debug|Win32
+		{7C80EECD-29D5-4C68-B687-4D647D410D87}.Debug|Win32.Build.0 = Debug|Win32
+		{7C80EECD-29D5-4C68-B687-4D647D410D87}.Release|Win32.ActiveCfg = Release|Win32
+		{7C80EECD-29D5-4C68-B687-4D647D410D87}.Release|Win32.Build.0 = Release|Win32
+		{C9E5B075-3689-46BE-B76B-5BC1829B1224}.Debug|Win32.ActiveCfg = Debug|Win32
+		{C9E5B075-3689-46BE-B76B-5BC1829B1224}.Debug|Win32.Build.0 = Debug|Win32
+		{C9E5B075-3689-46BE-B76B-5BC1829B1224}.Release|Win32.ActiveCfg = Release|Win32
+		{C9E5B075-3689-46BE-B76B-5BC1829B1224}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{B1B1B1B1-B1B1-B1B1-B1B1-B1B1B1B1B1B1} = {A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}
 		{C2C2C2C2-C2C2-C2C2-C2C2-C2C2C2C2C2C2} = {A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}
 		{D3D3D3D3-D3D3-D3D3-D3D3-D3D3D3D3D3D3} = {A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}
 		{E4E4E4E4-E4E4-E4E4-E4E4-E4E4E4E4E4E4} = {A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}
 		{F5F5F5F5-F5F5-F5F5-F5F5-F5F5F5F5F5F5} = {A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}
-		{G6G6G6G6-G6G6-G6G6-G6G6-G6G6G6G6G6G6} = {A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}
-	EndGlobalSection
-	GlobalSection(SolutionConfigurationPlatforms) = preSolution
-		Debug|x86 = Debug|x86
-		Release|x86 = Release|x86
-	EndGlobalSection
-	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8}.Debug|x86.ActiveCfg = Debug|Win32
-		{B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8}.Debug|x86.Build.0 = Debug|Win32
-		{B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8}.Release|x86.ActiveCfg = Release|Win32
-		{B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8}.Release|x86.Build.0 = Release|Win32
-		{7C80EECD-29D5-4C68-B687-4D647D410D87}.Debug|x86.ActiveCfg = Debug|Win32
-		{7C80EECD-29D5-4C68-B687-4D647D410D87}.Debug|x86.Build.0 = Debug|Win32
-		{7C80EECD-29D5-4C68-B687-4D647D410D87}.Release|x86.ActiveCfg = Release|Win32
-		{7C80EECD-29D5-4C68-B687-4D647D410D87}.Release|x86.Build.0 = Release|Win32
-		{C9E5B075-3689-46BE-B76B-5BC1829B1224}.Debug|x86.ActiveCfg = Debug|Win32
-		{C9E5B075-3689-46BE-B76B-5BC1829B1224}.Debug|x86.Build.0 = Debug|Win32
-		{C9E5B075-3689-46BE-B76B-5BC1829B1224}.Release|x86.ActiveCfg = Release|Win32
-		{C9E5B075-3689-46BE-B76B-5BC1829B1224}.Release|x86.Build.0 = Release|Win32
-	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
-	EndGlobalSection
-	GlobalSection(StartupProjects) = postSolution
-		{B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8} = {B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8}
+		{BF4C0C5E-DFC5-4053-8A57-81CF8609C70F} = {A0A0A0A0-A0A0-A0A0-A0A0-A0A0A0A0A0A0}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {88888888-8888-8888-8888-888888888888}
+	EndGlobalSection
+	GlobalSection(StartupProjects) = postSolution
+		{B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8} = {B3EAD768-E896-4D8C-BF0C-95EA8EE3D8C8}
 	EndGlobalSection
 EndGlobal

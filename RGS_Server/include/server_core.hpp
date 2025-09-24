@@ -4,8 +4,8 @@
 #include <boost/asio/thread_pool.hpp>
 #include <boost/circular_buffer.hpp>
 #include <thread>
-#include "../../RGS_SDK/network/transport.hpp"
-#include "../../RGS_SDK/network/dispatcher.hpp"
+#include "network/transport.hpp"
+#include "network/dispatcher.hpp"
 
 namespace rgs::server {
 

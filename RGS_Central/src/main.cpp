@@ -8,8 +8,8 @@
 #include "health_monitor.hpp"
 #include "router.hpp"
 #include "shutdown_controller.hpp"
-#include "../../RGS_SDK/network/transport.hpp"
-#include "../../RGS_SDK/network/dispatcher.hpp"
+#include "network/transport.hpp"
+#include "network/dispatcher.hpp"
 
 int main() {
     // Load configuration

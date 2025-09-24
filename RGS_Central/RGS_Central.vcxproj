@@ -51,24 +51,25 @@
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)RGS_SDK;$(SolutionDir)RGS_SDK\hooks;$(SolutionDir)RGS_SDK\memory;$(SolutionDir)RGS_SDK\network;$(SolutionDir)RGS_SDK\protection;$(SolutionDir)RGS_SDK\security;$(SolutionDir)RGS_SDK\utils;$(VcpkgRoot)installed\x86-windows\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)RGS_SDK;$(ProjectDir)include;$(VcpkgRoot)installed\x86-windows\include</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/permissive- %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)RGS_SDK;$(SolutionDir)RGS_SDK\hooks;$(SolutionDir)RGS_SDK\memory;$(SolutionDir)RGS_SDK\network;$(SolutionDir)RGS_SDK\protection;$(SolutionDir)RGS_SDK\security;$(SolutionDir)RGS_SDK\utils;$(VcpkgRoot)installed\x86-windows\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)RGS_SDK;$(ProjectDir)include;$(VcpkgRoot)installed\x86-windows\include</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/permissive- %(AdditionalOptions)</AdditionalOptions>
       <DebugInformationFormat>None</DebugInformationFormat>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
   </ItemDefinitionGroup>
-  
   <ItemGroup>
     <Filter Include="src">
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
@@ -92,64 +93,19 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\RGS_SDK\network\session.cpp">
-      <Filter>RGS_SDK\network</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\network\transport.cpp">
-      <Filter>RGS_SDK\network</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\network\dispatcher.cpp">
-      <Filter>RGS_SDK\network</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\security\nonce.cpp">
-      <Filter>RGS_SDK\security</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\security\hash.cpp">
-      <Filter>RGS_SDK\security</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\security\random.cpp">
-      <Filter>RGS_SDK\security</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\utils\config.cpp">
-      <Filter>RGS_SDK\utils</Filter>
-    </ClCompile>
+    <ClInclude Include="include\health_monitor.hpp" />
+    <ClInclude Include="include\policy_manager.hpp" />
+    <ClInclude Include="include\router.hpp" />
+    <ClInclude Include="include\session_manager.hpp" />
+    <ClInclude Include="include\shutdown_controller.hpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\health_monitor.cpp">
-      <Filter>src</Filter>
-    </ClCompile>
-    <ClCompile Include="src\main.cpp">
-      <Filter>src</Filter>
-    </ClCompile>
-    <ClCompile Include="src\policy_manager.cpp">
-      <Filter>src</Filter>
-    </ClCompile>
-    <ClCompile Include="src\router.cpp">
-      <Filter>src</Filter>
-    </ClCompile>
-    <ClCompile Include="src\session_manager.cpp">
-      <Filter>src</Filter>
-    </ClCompile>
-    <ClCompile Include="src\shutdown_controller.cpp">
-      <Filter>src</Filter>
-    </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="include\health_monitor.hpp">
-      <Filter>include</Filter>
-    </ClInclude>
-    <ClInclude Include="include\policy_manager.hpp">
-      <Filter>include</Filter>
-    </ClInclude>
-    <ClInclude Include="include\router.hpp">
-      <Filter>include</Filter>
-    </ClInclude>
-    <ClInclude Include="include\session_manager.hpp">
-      <Filter>include</Filter>
-    </ClInclude>
-    <ClInclude Include="include\shutdown_controller.hpp">
-      <Filter>include</Filter>
-    </ClInclude>
+    <ClCompile Include="src\health_monitor.cpp" />
+    <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\policy_manager.cpp" />
+    <ClCompile Include="src\router.cpp" />
+    <ClCompile Include="src\session_manager.cpp" />
+    <ClCompile Include="src\shutdown_controller.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

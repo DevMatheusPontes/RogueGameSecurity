@@ -1,6 +1,6 @@
 #include "server_core.hpp"
-#include "../../RGS_SDK/utils/config.hpp"
-#include "../../RGS_SDK/hooks/hook_manager.hpp"
+#include "utils/config.hpp"
+#include "hooks/hook_manager.hpp"
 #include <iostream>
 
 namespace rgs::server {

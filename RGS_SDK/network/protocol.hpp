@@ -6,7 +6,7 @@
 namespace rgs::sdk::network {
 
     // Protocol constants
-    constexpr uint32_t MAGIC_VALUE = 0xRGSSEC;
+    constexpr uint32_t MAGIC_VALUE = 0x52475353;
     constexpr uint16_t PROTOCOL_VERSION = 1;
 
     // Message types

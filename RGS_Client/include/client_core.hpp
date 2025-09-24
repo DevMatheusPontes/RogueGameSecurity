@@ -4,10 +4,10 @@
 #include <boost/asio/thread_pool.hpp>
 #include <boost/circular_buffer.hpp>
 #include <thread>
-#include "../../RGS_SDK/protection/event_interceptor.hpp"
-#include "../../RGS_SDK/protection/protection_pipeline.hpp"
-#include "../../RGS_SDK/protection/reporter.hpp"
-#include "../../RGS_SDK/utils/config.hpp"
+#include "protection/event_interceptor.hpp"
+#include "protection/protection_pipeline.hpp"
+#include "protection/reporter.hpp"
+#include "utils/config.hpp"
 
 namespace rgs::client {
 

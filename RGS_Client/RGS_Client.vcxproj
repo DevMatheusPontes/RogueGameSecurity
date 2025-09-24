@@ -51,24 +51,25 @@
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)RGS_SDK;$(SolutionDir)RGS_SDK\hooks;$(SolutionDir)RGS_SDK\memory;$(SolutionDir)RGS_SDK\network;$(SolutionDir)RGS_SDK\protection;$(SolutionDir)RGS_SDK\security;$(SolutionDir)RGS_SDK\utils;$(VcpkgRoot)installed\x86-windows\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)RGS_SDK;$(ProjectDir)include;$(VcpkgRoot)installed\x86-windows\include</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;_DEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/permissive- %(AdditionalOptions)</AdditionalOptions>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
-      <AdditionalIncludeDirectories>$(SolutionDir)RGS_SDK;$(SolutionDir)RGS_SDK\hooks;$(SolutionDir)RGS_SDK\memory;$(SolutionDir)RGS_SDK\network;$(SolutionDir)RGS_SDK\protection;$(SolutionDir)RGS_SDK\security;$(SolutionDir)RGS_SDK\utils;$(VcpkgRoot)installed\x86-windows\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)RGS_SDK;$(ProjectDir)include;$(VcpkgRoot)installed\x86-windows\include</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/permissive- %(AdditionalOptions)</AdditionalOptions>
       <DebugInformationFormat>None</DebugInformationFormat>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
   </ItemDefinitionGroup>
-  
   <ItemGroup>
     <Filter Include="src">
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
@@ -101,76 +102,11 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\RGS_SDK\hooks\hook_manager.cpp">
-      <Filter>RGS_SDK\hooks</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\memory\offset_registry.cpp">
-      <Filter>RGS_SDK\memory</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\memory\scanner.cpp">
-      <Filter>RGS_SDK\memory</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\memory\pointer_utils.cpp">
-      <Filter>RGS_SDK\memory</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\memory\memory_access.cpp">
-      <Filter>RGS_SDK\memory</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\network\session.cpp">
-      <Filter>RGS_SDK\network</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\network\transport.cpp">
-      <Filter>RGS_SDK\network</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\network\dispatcher.cpp">
-      <Filter>RGS_SDK\network</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\protection\reporter.cpp">
-      <Filter>RGS_SDK\protection</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\protection\protection_pipeline.cpp">
-      <Filter>RGS_SDK\protection</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\protection\event_interceptor.cpp">
-      <Filter>RGS_SDK\protection</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\protection\interface_protection.cpp">
-      <Filter>RGS_SDK\protection</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\protection\memory_protection.cpp">
-      <Filter>RGS_SDK\protection</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\protection\anti_debug.cpp">
-      <Filter>RGS_SDK\protection</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\protection\injection_detector.cpp">
-      <Filter>RGS_SDK\protection</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\security\nonce.cpp">
-      <Filter>RGS_SDK\security</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\security\hash.cpp">
-      <Filter>RGS_SDK\security</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\security\random.cpp">
-      <Filter>RGS_SDK\security</Filter>
-    </ClCompile>
-    <ClCompile Include="..\RGS_SDK\utils\config.cpp">
-      <Filter>RGS_SDK\utils</Filter>
-    </ClCompile>
+    <ClInclude Include="include\client_core.hpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\client_core.cpp">
-      <Filter>src</Filter>
-    </ClCompile>
-    <ClCompile Include="src\dllmain.cpp">
-      <Filter>src</Filter>
-    </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="include\client_core.hpp">
-      <Filter>include</Filter>
-    </ClInclude>
+    <ClCompile Include="src\client_core.cpp" />
+    <ClCompile Include="src\dllmain.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../RGS_SDK/network/session.hpp"
+#include "network/session.hpp"
 #include <memory>
 #include <mutex>
 #include <boost/multi_index_container.hpp>
