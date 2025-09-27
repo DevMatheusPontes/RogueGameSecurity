@@ -1,0 +1,47 @@
+# Arquivos e pastas do Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Arquivos e pastas de build
+[Bb]in/
+[Bb]uild/
+[Dd]ebug/
+[Rr]elease/
+x64/
+Win32/
+ipch/
+*.aps
+*.bak
+*.bsc
+*.ilk
+*.lib
+*.log
+*.ncb
+*.obj
+*.pch
+*.pdb
+*.res
+*.sbr
+*.sdf
+
+# Executáveis e bibliotecas
+*.dll
+*.exe
+*.so
+
+# Dependências do vcpkg
+/vcpkg_installed/
+/packages/
+/buildtrees/
+/downloads/
+
+# Pastas específicas do projeto a serem ignoradas
+/_olds/
+
+# Arquivos de configuração local do usuário
+*.vcxproj.user
+
+

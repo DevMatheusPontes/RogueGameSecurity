@@ -1,0 +1,12 @@
+{
+  "name": "roguegamesecurity",
+  "version": "1.0.0",
+  "dependencies": [
+    "boost-asio",
+    "boost-system",
+    "boost-crc",
+    "boost-log",
+    "boost-property-tree",
+    "openssl"
+  ]
+}
