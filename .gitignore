@@ -40,6 +40,7 @@ ipch/
 
 # Pastas específicas do projeto a serem ignoradas
 /_olds/
+[Dd]ocs/
 
 # Arquivos de configuração local do usuário
 *.vcxproj.user

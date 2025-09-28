@@ -1,36 +1,39 @@
 #include "message.hpp"
 
-namespace rgs::modules::network {
+namespace rgs::network {
 
-Message::Message(ServiceCode svc, MessageType type) {
-    hdr_.version = 1;
-    hdr_.service = static_cast<uint8_t>(svc);
-    hdr_.type    = static_cast<uint8_t>(type);
-    hdr_.flags   = 0;
-    hdr_.size    = 0;
+Message::Message() : header_{}, payload_{} {}
+
+Message::Message(const ProtocolHeader& h, std::vector<uint8_t> p)
+    : header_(h), payload_(std::move(p)) {}
+
+const ProtocolHeader& Message::header() const {
+    return header_;
 }
 
-uint8_t Message::version() const { return hdr_.version; }
-ServiceCode Message::service() const { return static_cast<ServiceCode>(hdr_.service); }
-MessageType Message::msgType() const { return static_cast<MessageType>(hdr_.type); }
-uint8_t Message::flags() const { return hdr_.flags; }
-void Message::setFlags(uint8_t f) { hdr_.flags = f; }
-
-const std::vector<uint8_t>& Message::payload() const { return data_; }
-void Message::setPayload(const std::vector<uint8_t>& p) { data_ = p; hdr_.size = static_cast<uint32_t>(data_.size()); }
-void Message::setPayloadString(const std::string& s) { data_.assign(s.begin(), s.end()); hdr_.size = static_cast<uint32_t>(data_.size()); }
-std::string Message::toString() const { return std::string(data_.begin(), data_.end()); }
-
-std::vector<uint8_t> Message::toBuffer() const {
-    return Protocol::serialize(hdr_, data_);
+const std::vector<uint8_t>& Message::payload() const {
+    return payload_;
 }
 
-Message Message::fromBuffer(const std::vector<uint8_t>& buf) {
-    auto [hdr, payload] = Protocol::deserialize(buf);
-    Message m;
-    m.hdr_ = hdr;
-    m.data_ = std::move(payload);
-    return m;
+std::vector<uint8_t> Message::encode() const {
+    auto rawHeader = ProtocolHeader::build(header_);
+    std::vector<uint8_t> result;
+    result.reserve(PROTOCOL_HEADER_SIZE + payload_.size());
+    result.insert(result.end(), rawHeader.begin(), rawHeader.end());
+    result.insert(result.end(), payload_.begin(), payload_.end());
+    return result;
 }
 
-} // namespace rgs::modules::network
+Message Message::decode(const std::vector<uint8_t>& raw) {
+    if (raw.size() < PROTOCOL_HEADER_SIZE) throw std::runtime_error("Pacote inválido");
+
+    std::array<uint8_t, PROTOCOL_HEADER_SIZE> rawHeader{};
+    std::copy_n(raw.begin(), PROTOCOL_HEADER_SIZE, rawHeader.begin());
+
+    auto h = ProtocolHeader::parse(rawHeader);
+    std::vector<uint8_t> payload(raw.begin() + PROTOCOL_HEADER_SIZE, raw.end());
+
+    return Message(h, std::move(payload));
+}
+
+}

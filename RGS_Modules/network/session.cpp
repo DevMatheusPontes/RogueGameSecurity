@@ -1,123 +1,95 @@
 #include "session.hpp"
+#include "protocol.hpp"
 #include <iostream>
-#include <cstring>
+#include <sstream>
 
-namespace rgs::modules::network {
+namespace rgs::network {
 
-static constexpr std::size_t MAX_PAYLOAD_SIZE = PROTOCOL_MAX_PAYLOAD;
-
-Session::Session(boost::asio::io_context& io, Dispatcher* dispatcher)
-    : socket_(io),
-      strand_(boost::asio::make_strand(io)),
-      dispatcher_(dispatcher) {}
-
-Session::tcp::socket& Session::socket() { return socket_; }
-
-void Session::start() { doReadHeader(); }
-
-void Session::send(const Message& msg) {
-    auto self = shared_from_this();
-    auto buffer = msg.toBuffer();
-
-    boost::asio::async_write(
-        socket_,
-        boost::asio::buffer(buffer),
-        boost::asio::bind_executor(
-            strand_,
-            [this, self](boost::system::error_code ec, std::size_t /*length*/) {
-                if (ec) {
-                    std::cerr << "[Session] write error: " << ec.message() << std::endl;
-                    close();
-                }
-            }
-        )
-    );
+Session::Session(tcp::socket socket, Dispatcher& dispatcher)
+    : socket_(std::move(socket)), dispatcher_(dispatcher) {
+    std::ostringstream oss;
+    oss << this; // id simples baseado no ponteiro
+    id_ = oss.str();
 }
 
-void Session::doReadHeader() {
-    auto self = shared_from_this();
-    boost::asio::async_read(
-        socket_,
-        boost::asio::buffer(headerRaw_.data(), headerRaw_.size()),
-        boost::asio::bind_executor(
-            strand_,
-            [this, self](boost::system::error_code ec, std::size_t /*length*/) {
-                if (ec) {
-                    if (ec != boost::asio::error::eof)
-                        std::cerr << "[Session] header read error: " << ec.message() << std::endl;
-                    close();
-                    return;
-                }
-
-                const uint32_t sizeLE = Protocol::readLE32(headerRaw_.data() + 4);
-                if (sizeLE > MAX_PAYLOAD_SIZE) {
-                    std::cerr << "[Session] payload muito grande (" << sizeLE << "), desconectando\n";
-                    close();
-                    return;
-                }
-
-                doReadBody(static_cast<std::size_t>(sizeLE));
-            }
-        )
-    );
+void Session::start() {
+    doReadHeader();
 }
 
-void Session::doReadBody(std::size_t bodySize) {
-    auto self = shared_from_this();
-    readBuffer_.resize(bodySize);
-
-    boost::asio::async_read(
-        socket_,
-        boost::asio::buffer(readBuffer_.data(), bodySize),
-        boost::asio::bind_executor(
-            strand_,
-            [this, self, bodySize](boost::system::error_code ec, std::size_t /*length*/) {
-                if (ec) {
-                    std::cerr << "[Session] body read error: " << ec.message() << std::endl;
-                    close();
-                    return;
-                }
-
-                try {
-                    std::vector<uint8_t> full(PROTOCOL_HEADER_SIZE + bodySize);
-                    std::memcpy(full.data(), headerRaw_.data(), PROTOCOL_HEADER_SIZE);
-                    if (bodySize > 0) {
-                        std::memcpy(full.data() + PROTOCOL_HEADER_SIZE, readBuffer_.data(), bodySize);
-                    }
-
-                    // Coerência header/corpo
-                    const uint32_t headerSize = Protocol::readLE32(full.data() + 4);
-                    if (headerSize != bodySize) {
-                        throw std::runtime_error("Header size difere do corpo lido");
-                    }
-
-                    // Parse Message
-                    Message msg = Message::fromBuffer(full);
-
-                    // Dispatch
-                    if (!dispatcher_ || !dispatcher_->dispatch(self, msg)) {
-                        std::cout << "[Session] mensagem sem handler service=" 
-                                  << static_cast<int>(msg.service())
-                                  << " type=" << static_cast<int>(msg.msgType())
-                                  << " payload=" << msg.toString() << std::endl;
-                    }
-
-                } catch (const std::exception& e) {
-                    std::cerr << "[Session] erro de protocolo: " << e.what() << std::endl;
-                    close();
-                    return;
-                }
-
-                doReadHeader();
-            }
-        )
-    );
+void Session::send(const std::vector<uint8_t>& data) {
+    auto self(shared_from_this());
+    boost::asio::post(socket_.get_executor(), [this, self, data]() {
+        bool writing = !writeQueue_.empty();
+        writeQueue_.push_back(data);
+        if (!writing) doWrite();
+    });
 }
 
 void Session::close() {
+    if (!open_) return;
+    open_ = false;
     boost::system::error_code ec;
-    socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
+    socket_.shutdown(tcp::socket::shutdown_both, ec);
     socket_.close(ec);
 }
 
-} // namespace rgs::modules::network
+std::string Session::id() const {
+    return id_;
+}
+
+std::string Session::remoteIp() const {
+    try {
+        return socket_.remote_endpoint().address().to_string();
+    } catch (...) {
+        return "unknown";
+    }
+}
+
+bool Session::isOpen() const {
+    return open_;
+}
+
+void Session::doReadHeader() {
+    auto self(shared_from_this());
+    boost::asio::async_read(socket_, boost::asio::buffer(readHeader_),
+        [this, self](boost::system::error_code ec, std::size_t) {
+            if (!ec) {
+                auto header = ProtocolHeader::parse(readHeader_);
+                readBody_.resize(header.payloadLength);
+                doReadBody(header.payloadLength);
+            } else {
+                close();
+            }
+        });
+}
+
+void Session::doReadBody(std::size_t bodyLength) {
+    auto self(shared_from_this());
+    boost::asio::async_read(socket_, boost::asio::buffer(readBody_),
+        [this, self](boost::system::error_code ec, std::size_t) {
+            if (!ec) {
+                std::vector<uint8_t> raw;
+                raw.insert(raw.end(), readHeader_.begin(), readHeader_.end());
+                raw.insert(raw.end(), readBody_.begin(), readBody_.end());
+                dispatcher_.dispatch(*this, raw);
+                doReadHeader();
+            } else {
+                close();
+            }
+        });
+}
+
+void Session::doWrite() {
+    auto self(shared_from_this());
+    boost::asio::async_write(socket_, boost::asio::buffer(writeQueue_.front()),
+        [this, self](boost::system::error_code ec, std::size_t) {
+            if (!ec) {
+                writeQueue_.pop_front();
+                if (!writeQueue_.empty()) doWrite();
+            } else {
+                close();
+            }
+        });
+}
+
+}

@@ -1,35 +1,41 @@
 #pragma once
+
 #include <boost/asio.hpp>
+#include <deque>
 #include <memory>
-#include <array>
 #include <vector>
-#include "message.hpp"
+#include <string>
+#include <functional>
 #include "dispatcher.hpp"
 
-namespace rgs::modules::network {
+namespace rgs::network {
 
 class Session : public std::enable_shared_from_this<Session> {
 public:
     using tcp = boost::asio::ip::tcp;
 
-    explicit Session(boost::asio::io_context& io, Dispatcher* dispatcher);
+    Session(tcp::socket socket, Dispatcher& dispatcher);
 
-    tcp::socket& socket();
     void start();
-    void send(const Message& msg);
+    void send(const std::vector<uint8_t>& data);
     void close();
+
+    std::string id() const;
+    std::string remoteIp() const;
+    bool isOpen() const;
 
 private:
     void doReadHeader();
-    void doReadBody(std::size_t bodySize);
+    void doReadBody(std::size_t bodyLength);
+    void doWrite();
 
     tcp::socket socket_;
-    boost::asio::strand<boost::asio::io_context::executor_type> strand_;
-
-    Dispatcher* dispatcher_{nullptr};
-
-    std::array<uint8_t, PROTOCOL_HEADER_SIZE> headerRaw_{};
-    std::vector<uint8_t> readBuffer_;
+    Dispatcher& dispatcher_;
+    std::array<uint8_t, PROTOCOL_HEADER_SIZE> readHeader_;
+    std::vector<uint8_t> readBody_;
+    std::deque<std::vector<uint8_t>> writeQueue_;
+    bool open_{true};
+    std::string id_;
 };
 
-} // namespace rgs::modules::network
+}

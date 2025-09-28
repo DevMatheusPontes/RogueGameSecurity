@@ -1,22 +1,19 @@
 #pragma once
-#include <functional>
-#include <unordered_map>
-#include <memory>
+
+#include "router.hpp"
 #include "message.hpp"
+#include "session.hpp"
 
-namespace rgs::modules::network {
-
-class Session; // forward
-
-using Handler = std::function<void(std::shared_ptr<Session>, const Message&)>;
+namespace rgs::network {
 
 class Dispatcher {
 public:
-    void registerHandler(ServiceCode svc, Handler h);
-    bool dispatch(std::shared_ptr<Session> session, const Message& msg);
+    explicit Dispatcher(Router& router);
+
+    void dispatch(Session& session, const std::vector<uint8_t>& raw);
 
 private:
-    std::unordered_map<uint8_t, Handler> handlers_;
+    Router& router_;
 };
 
-} // namespace rgs::modules::network
+}

@@ -1,20 +1,12 @@
 #include "server_acceptor.hpp"
-#include <iostream>
 
-namespace rgs::modules::network {
+namespace rgs::network {
 
-ServerAcceptor::ServerAcceptor(boost::asio::io_context& io, unsigned short port)
-    : io_(io),
-      acceptor_(io, tcp::endpoint(tcp::v4(), port)) {}
-
-void ServerAcceptor::onClientConnected(std::function<void(std::shared_ptr<Session>)> cb) {
-    clientConnectedCb_ = std::move(cb);
-}
+ServerAcceptor::ServerAcceptor(boost::asio::io_context& ctx, Dispatcher& dispatcher, uint16_t port)
+    : acceptor_(ctx, tcp::endpoint(tcp::v4(), port)), dispatcher_(dispatcher) {}
 
 void ServerAcceptor::start() {
-    if (running_) return;
     running_ = true;
-    std::cout << "[Central] Listening on port " << acceptor_.local_endpoint().port() << std::endl;
     doAccept();
 }
 
@@ -25,21 +17,15 @@ void ServerAcceptor::stop() {
 }
 
 void ServerAcceptor::doAccept() {
-    auto session = std::make_shared<Session>(io_);
-    acceptor_.async_accept(
-        session->socket(),
-        [this, session](boost::system::error_code ec) {
-            if (!running_) return;
-            if (!ec) {
-                std::cout << "[Central] Client connected" << std::endl;
-                session->start();
-                if (clientConnectedCb_) clientConnectedCb_(session);
-            } else {
-                std::cerr << "[Central] accept error: " << ec.message() << std::endl;
-            }
-            doAccept();
+    if (!running_) return;
+
+    acceptor_.async_accept([this](boost::system::error_code ec, tcp::socket socket) {
+        if (!ec) {
+            auto session = std::make_shared<Session>(std::move(socket), dispatcher_);
+            session->start();
         }
-    );
+        doAccept();
+    });
 }
 
-} // namespace rgs::modules::network
+}

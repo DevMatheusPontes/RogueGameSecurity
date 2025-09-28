@@ -1,35 +1,44 @@
-#pragma once
 #include "protocol.hpp"
-#include <vector>
-#include <string>
 
-namespace rgs::modules::network {
+namespace rgs::network {
 
-class Message {
-public:
-    Message() = default;
-    Message(ServiceCode svc, MessageType type);
+ProtocolHeader ProtocolHeader::parse(const std::array<uint8_t, PROTOCOL_HEADER_SIZE>& raw) {
+    ProtocolHeader h;
+    h.version        = raw[0];
+    h.flags          = raw[1];
+    h.serviceCode    = (raw[2] << 8) | raw[3];
+    h.messageType    = (raw[4] << 8) | raw[5];
+    h.correlationId  = (raw[6] << 24) | (raw[7] << 16) | (raw[8] << 8) | raw[9];
+    h.payloadLength  = (raw[10] << 24) | (raw[11] << 16) | (raw[12] << 8) | raw[13];
+    h.reserved       = (raw[14] << 24) | (raw[15] << 16) | (raw[16] << 8) | raw[17];
+    return h;
+}
 
-    // Header accessors
-    uint8_t version() const;
-    ServiceCode service() const;
-    MessageType msgType() const;
-    uint8_t flags() const;
-    void setFlags(uint8_t f);
+std::array<uint8_t, PROTOCOL_HEADER_SIZE> ProtocolHeader::build(const ProtocolHeader& h) {
+    std::array<uint8_t, PROTOCOL_HEADER_SIZE> raw{};
+    raw[0]  = h.version;
+    raw[1]  = h.flags;
+    raw[2]  = h.serviceCode >> 8;
+    raw[3]  = h.serviceCode & 0xFF;
+    raw[4]  = h.messageType >> 8;
+    raw[5]  = h.messageType & 0xFF;
+    raw[6]  = h.correlationId >> 24;
+    raw[7]  = (h.correlationId >> 16) & 0xFF;
+    raw[8]  = (h.correlationId >> 8) & 0xFF;
+    raw[9]  = h.correlationId & 0xFF;
+    raw[10] = h.payloadLength >> 24;
+    raw[11] = (h.payloadLength >> 16) & 0xFF;
+    raw[12] = (h.payloadLength >> 8) & 0xFF;
+    raw[13] = h.payloadLength & 0xFF;
+    raw[14] = h.reserved >> 24;
+    raw[15] = (h.reserved >> 16) & 0xFF;
+    raw[16] = (h.reserved >> 8) & 0xFF;
+    raw[17] = h.reserved & 0xFF;
+    return raw;
+}
 
-    // Payload
-    const std::vector<uint8_t>& payload() const;
-    void setPayload(const std::vector<uint8_t>& p);
-    void setPayloadString(const std::string& s);
-    std::string toString() const;
+bool validateHeader(const ProtocolHeader& h) {
+    return h.version == 1 && h.payloadLength <= 65536;
+}
 
-    // Wire format
-    std::vector<uint8_t> toBuffer() const;
-    static Message fromBuffer(const std::vector<uint8_t>& buf);
-
-private:
-    ProtocolHeader hdr_{};
-    std::vector<uint8_t> data_;
-};
-
-} // namespace rgs::modules::network
+}

@@ -1,29 +1,27 @@
 #pragma once
+
 #include <boost/asio.hpp>
 #include <memory>
-#include <functional>
 #include "session.hpp"
+#include "dispatcher.hpp"
 
-namespace rgs::modules::network {
+namespace rgs::network {
 
 class ServerAcceptor {
 public:
     using tcp = boost::asio::ip::tcp;
 
-    ServerAcceptor(boost::asio::io_context& io, unsigned short port);
+    ServerAcceptor(boost::asio::io_context& ctx, Dispatcher& dispatcher, uint16_t port);
 
     void start();
     void stop();
 
-    void onClientConnected(std::function<void(std::shared_ptr<Session>)> cb);
-
 private:
     void doAccept();
 
-    boost::asio::io_context& io_;
     tcp::acceptor acceptor_;
-    std::function<void(std::shared_ptr<Session>)> clientConnectedCb_;
+    Dispatcher& dispatcher_;
     bool running_{false};
 };
 
-} // namespace rgs::modules::network
+}
