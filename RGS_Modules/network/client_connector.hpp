@@ -1,27 +1,27 @@
 #pragma once
 
 #include <boost/asio.hpp>
-#include <memory>
-#include <string>
+#include <functional>
 #include "session.hpp"
-#include "dispatcher.hpp"
 
 namespace rgs::network {
 
-class ClientConnector : public std::enable_shared_from_this<ClientConnector> {
+class ClientConnector {
 public:
-    using tcp = boost::asio::ip::tcp;
+    ClientConnector(boost::asio::io_context& io,
+                    const boost::asio::ip::tcp::endpoint& endpoint);
 
-    ClientConnector(boost::asio::io_context& ctx, Dispatcher& dispatcher);
-
-    void connect(const std::string& host, uint16_t port, std::function<void(std::shared_ptr<Session>)> onConnect);
+    void connect();
     void stop();
 
+    void set_on_connected(std::function<void(SessionPtr)> cb) { on_connected_ = std::move(cb); }
+    void set_on_error(std::function<void()> cb) { on_error_ = std::move(cb); }
+
 private:
-    boost::asio::io_context& context_;
-    tcp::resolver resolver_;
-    Dispatcher& dispatcher_;
-    bool running_{false};
+    boost::asio::ip::tcp::endpoint endpoint_;
+    boost::asio::ip::tcp::socket socket_;
+    std::function<void(SessionPtr)> on_connected_;
+    std::function<void()> on_error_;
 };
 
-}
+} // namespace rgs::network

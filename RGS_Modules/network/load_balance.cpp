@@ -2,29 +2,18 @@
 
 namespace rgs::network {
 
-LoadBalancer::LoadBalancer() {}
-
-void LoadBalancer::addTarget(const std::string& host, uint16_t port) {
-    std::lock_guard lock(mutex_);
-    targets_.emplace_back(host, port);
+void LoadBalancer::add(SessionPtr session) {
+    sessions_.push_back(session);
 }
 
-void LoadBalancer::clear() {
-    std::lock_guard lock(mutex_);
-    targets_.clear();
-    index_ = 0;
+void LoadBalancer::remove(SessionPtr session) {
+    sessions_.erase(std::remove(sessions_.begin(), sessions_.end(), session), sessions_.end());
 }
 
-std::pair<std::string, uint16_t> LoadBalancer::next() {
-    std::lock_guard lock(mutex_);
-    if (targets_.empty()) return {"", 0};
-    auto i = index_.fetch_add(1) % targets_.size();
-    return targets_[i];
+SessionPtr LoadBalancer::next() {
+    if (sessions_.empty()) return nullptr;
+    if (index_ >= sessions_.size()) index_ = 0;
+    return sessions_[index_++];
 }
 
-std::size_t LoadBalancer::size() const {
-    std::lock_guard lock(mutex_);
-    return targets_.size();
-}
-
-}
+} // namespace rgs::network

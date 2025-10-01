@@ -1,30 +1,26 @@
 #include "heartbeat.hpp"
-#include "message.hpp"
-#include "service_codes.hpp"
+#include "utils/logger.hpp"
 
 namespace rgs::network {
 
-Heartbeat::Heartbeat(Session& session, threading::TimerService& timer,
-                     std::chrono::milliseconds interval)
-    : session_(session), timer_(timer), interval_(interval) {}
+Heartbeat::Heartbeat(std::chrono::seconds timeout) : timeout_(timeout) {}
 
-void Heartbeat::start() {
-    running_ = true;
-    sendPing();
+void Heartbeat::mark_alive(SessionPtr session) {
+    last_seen_[session] = std::chrono::steady_clock::now();
 }
 
-void Heartbeat::stop() {
-    running_ = false;
+void Heartbeat::check_timeouts() {
+    auto now = std::chrono::steady_clock::now();
+    for (auto it = last_seen_.begin(); it != last_seen_.end();) {
+        if (now - it->second > timeout_) {
+            rgs::utils::Logger::instance().log(rgs::utils::LogLevel::Warning,
+                                               "Session timed out");
+            it->first->stop();
+            it = last_seen_.erase(it);
+        } else {
+            ++it;
+        }
+    }
 }
 
-void Heartbeat::sendPing() {
-    if (!running_ || !session_.isOpen()) return;
-
-    ProtocolHeader h{1, 0, static_cast<uint16_t>(ServiceCode::Ping), 0x0001, 0, 0, 0};
-    Message msg(h, {});
-    session_.send(msg.encode());
-
-    timer_.scheduleOnce(interval_, [this]() { sendPing(); });
-}
-
-}
+} // namespace rgs::network

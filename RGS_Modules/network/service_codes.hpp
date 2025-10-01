@@ -4,14 +4,13 @@
 
 namespace rgs::network {
 
-enum class ServiceCode : uint16_t {
-    Hello           = 0x0001,
-    Register        = 0x0100,
-    Auth            = 0x0101,
-    Ping            = 0x0200,
-    PlayerCommand   = 0x0300,
-    ServerStatus    = 0x0400,
-    InternalError   = 0xFFFF
+// Enum de códigos de serviço
+enum ServiceCode : std::uint16_t {
+    SERVICE_HELLO    = 1,
+    SERVICE_PING     = 2,
+    SERVICE_AUTH     = 3,
+    SERVICE_REGISTER = 4,
+    // Reservado para futuros serviços
 };
 
-}
+} // namespace rgs::network

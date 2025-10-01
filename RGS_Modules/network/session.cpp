@@ -1,95 +1,90 @@
 #include "session.hpp"
-#include "protocol.hpp"
-#include <iostream>
-#include <sstream>
 
 namespace rgs::network {
 
-Session::Session(tcp::socket socket, Dispatcher& dispatcher)
-    : socket_(std::move(socket)), dispatcher_(dispatcher) {
-    std::ostringstream oss;
-    oss << this; // id simples baseado no ponteiro
-    id_ = oss.str();
-}
+Session::Session(boost::asio::ip::tcp::socket socket)
+    : socket_(std::move(socket)) {}
 
 void Session::start() {
-    doReadHeader();
+    do_read_header();
 }
 
-void Session::send(const std::vector<uint8_t>& data) {
-    auto self(shared_from_this());
-    boost::asio::post(socket_.get_executor(), [this, self, data]() {
-        bool writing = !writeQueue_.empty();
-        writeQueue_.push_back(data);
-        if (!writing) doWrite();
-    });
+void Session::stop() {
+    close();
 }
 
-void Session::close() {
-    if (!open_) return;
-    open_ = false;
-    boost::system::error_code ec;
-    socket_.shutdown(tcp::socket::shutdown_both, ec);
-    socket_.close(ec);
-}
-
-std::string Session::id() const {
-    return id_;
-}
-
-std::string Session::remoteIp() const {
-    try {
-        return socket_.remote_endpoint().address().to_string();
-    } catch (...) {
-        return "unknown";
+void Session::async_send(const Message& msg) {
+    auto data = msg.to_bytes();
+    bool write_in_progress = !write_queue_.empty();
+    write_queue_.push_back(std::move(data));
+    if (!write_in_progress) {
+        do_write();
     }
 }
 
-bool Session::isOpen() const {
-    return open_;
-}
-
-void Session::doReadHeader() {
-    auto self(shared_from_this());
-    boost::asio::async_read(socket_, boost::asio::buffer(readHeader_),
-        [this, self](boost::system::error_code ec, std::size_t) {
+void Session::do_read_header() {
+    auto self = shared_from_this();
+    read_buffer_.resize(Protocol::HEADER_SIZE);
+    boost::asio::async_read(socket_,
+        boost::asio::buffer(read_buffer_),
+        [this, self](boost::system::error_code ec, std::size_t /*len*/) {
             if (!ec) {
-                auto header = ProtocolHeader::parse(readHeader_);
-                readBody_.resize(header.payloadLength);
-                doReadBody(header.payloadLength);
+                auto hdr_opt = Protocol::decode_header(read_buffer_.data(), read_buffer_.size());
+                if (!hdr_opt) {
+                    rgs::utils::Logger::instance().log(rgs::utils::LogLevel::Error, "Invalid header");
+                    close();
+                    return;
+                }
+                read_header_ = *hdr_opt;
+                do_read_body(read_header_.payload_len);
             } else {
                 close();
             }
         });
 }
 
-void Session::doReadBody(std::size_t bodyLength) {
-    auto self(shared_from_this());
-    boost::asio::async_read(socket_, boost::asio::buffer(readBody_),
-        [this, self](boost::system::error_code ec, std::size_t) {
+void Session::do_read_body(std::size_t body_len) {
+    auto self = shared_from_this();
+    read_buffer_.resize(body_len);
+    boost::asio::async_read(socket_,
+        boost::asio::buffer(read_buffer_),
+        [this, self, body_len](boost::system::error_code ec, std::size_t /*len*/) {
             if (!ec) {
-                std::vector<uint8_t> raw;
-                raw.insert(raw.end(), readHeader_.begin(), readHeader_.end());
-                raw.insert(raw.end(), readBody_.begin(), readBody_.end());
-                dispatcher_.dispatch(*this, raw);
-                doReadHeader();
+                auto msg_opt = Message::from_bytes(read_buffer_.data(),
+                                                   Protocol::HEADER_SIZE + body_len);
+                if (msg_opt && on_message_) {
+                    on_message_(self, *msg_opt);
+                }
+                do_read_header();
             } else {
                 close();
             }
         });
 }
 
-void Session::doWrite() {
-    auto self(shared_from_this());
-    boost::asio::async_write(socket_, boost::asio::buffer(writeQueue_.front()),
-        [this, self](boost::system::error_code ec, std::size_t) {
+void Session::do_write() {
+    auto self = shared_from_this();
+    boost::asio::async_write(socket_,
+        boost::asio::buffer(write_queue_.front()),
+        [this, self](boost::system::error_code ec, std::size_t /*len*/) {
             if (!ec) {
-                writeQueue_.pop_front();
-                if (!writeQueue_.empty()) doWrite();
+                write_queue_.pop_front();
+                if (!write_queue_.empty()) {
+                    do_write();
+                }
             } else {
                 close();
             }
         });
 }
 
+void Session::close() {
+    boost::system::error_code ec;
+    socket_.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ec);
+    socket_.close(ec);
+    if (on_close_) {
+        on_close_(shared_from_this());
+    }
 }
+
+} // namespace rgs::network

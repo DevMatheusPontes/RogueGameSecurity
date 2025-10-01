@@ -1,55 +1,55 @@
-#include "network/io_context_pool.hpp"
-#include "network/server_acceptor.hpp"
-#include "network/protocol.hpp"
 #include <iostream>
-#include <thread>
-#include <chrono>
-#include <locale>
-#include <clocale>
+#include <boost/asio.hpp>
 
-using namespace rgs::modules::network;
+#include "utils/logger.hpp"
+#include "utils/console_color.hpp"
+#include "network/server_acceptor.hpp"
+#include "network/router.hpp"
+#include "network/service_codes.hpp"
+#include "handlers/hello.hpp"
+#include "handlers/ping.hpp"
+#include "handlers/auth.hpp"
+#include "handlers/register.hpp"
+#include "network/connection_manager.hpp"
+
+using namespace rgs::utils;
+using namespace rgs::network;
+using namespace rgs::handlers;
 
 int main() {
     try {
-        // Força locale para UTF-8 (corrige acentuação no console)
-        std::setlocale(LC_ALL, "pt_BR.UTF-8");
+        boost::asio::io_context io;
 
-        IoContextPool pool(4);
-        auto& io = pool.next();
+        // Endpoint: localhost:9000
+        boost::asio::ip::tcp::endpoint endpoint(boost::asio::ip::tcp::v4(), 9000);
 
-        ServerAcceptor acceptor(io, 7777);
+        ServerAcceptor acceptor(io, endpoint);
+        ConnectionManager conn_mgr;
+        Router router;
 
-        acceptor.onClientConnected([](std::shared_ptr<Session> s) {
-            std::cout << "[Central] Nova conexão recebida\n";
+        // Registrar rotas
+        router.register_route(SERVICE_HELLO,  [](SessionPtr s, const Message& m){ HelloHandler::handle(s, m); });
+        router.register_route(SERVICE_PING,   [](SessionPtr s, const Message& m){ PingHandler::handle(s, m); });
+        router.register_route(SERVICE_AUTH,   [](SessionPtr s, const Message& m){ AuthHandler::handle(s, m); });
+        router.register_route(SERVICE_REGISTER,[](SessionPtr s, const Message& m){ RegisterHandler::handle(s, m); });
 
-            // Envia mensagem de boas-vindas usando o protocolo
-            ProtocolMessage msg = ProtocolMessage::fromString(
-                MessageType::Hello,
-                "Welcome to RGS_Central!"
-            );
-            s->send(msg);
+        // Callback de nova sessão
+        acceptor.set_on_new_session([&](SessionPtr session) {
+            Logger::instance().log(LogLevel::Info, "New connection accepted");
+            conn_mgr.add(session);
+
+            session->set_on_message([&](SessionPtr s, Message msg) {
+                router.route(s, msg);
+            });
         });
 
-        acceptor.start();
-        pool.run();
+        Logger::instance().log(LogLevel::Info, "Central starting on port 9000");
 
-        // Mantém o Central ativo até o usuário encerrar manualmente
-        std::cout << "[Central] Servidor em execução. Pressione ENTER para encerrar...\n";
-        std::cin.get();
+        acceptor.start_accept();
+        io.run();
 
-        // Encerramento limpo
-        acceptor.stop();
-        pool.stop();
-
-    } catch (const std::exception& e) {
-        // Em vez de encerrar, apenas loga o erro e continua
-        std::cerr << "[Central] Erro capturado: " << e.what() << std::endl;
-        std::cout << "[Central] Continuando em execução. Pressione ENTER para encerrar...\n";
-        std::cin.get();
-    } catch (...) {
-        std::cerr << "[Central] Erro desconhecido capturado.\n";
-        std::cout << "[Central] Continuando em execução. Pressione ENTER para encerrar...\n";
-        std::cin.get();
+    } catch (const std::exception& ex) {
+        Logger::instance().log(LogLevel::Error, ex.what());
     }
 
     return 0;

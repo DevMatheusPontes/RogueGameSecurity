@@ -3,25 +3,23 @@
 #include <boost/asio.hpp>
 #include <memory>
 #include "session.hpp"
-#include "dispatcher.hpp"
 
 namespace rgs::network {
 
 class ServerAcceptor {
 public:
-    using tcp = boost::asio::ip::tcp;
+    ServerAcceptor(boost::asio::io_context& io, const boost::asio::ip::tcp::endpoint& endpoint);
 
-    ServerAcceptor(boost::asio::io_context& ctx, Dispatcher& dispatcher, uint16_t port);
-
-    void start();
+    void start_accept();
     void stop();
 
-private:
-    void doAccept();
+    void set_on_new_session(std::function<void(SessionPtr)> cb) { on_new_session_ = std::move(cb); }
 
-    tcp::acceptor acceptor_;
-    Dispatcher& dispatcher_;
-    bool running_{false};
+private:
+    void do_accept();
+
+    boost::asio::ip::tcp::acceptor acceptor_;
+    std::function<void(SessionPtr)> on_new_session_;
 };
 
-}
+} // namespace rgs::network

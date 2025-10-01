@@ -37,6 +37,7 @@ ipch/
 /packages/
 /buildtrees/
 /downloads/
+/[Extras/
 
 # Pastas específicas do projeto a serem ignoradas
 /_olds/

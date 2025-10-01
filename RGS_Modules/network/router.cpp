@@ -1,30 +1,20 @@
 #include "router.hpp"
+#include "utils/logger.hpp"
 
 namespace rgs::network {
 
-void Router::registerHandler(uint16_t serviceCode, Handler handler) {
-    handlers_[serviceCode] = std::move(handler);
+void Router::register_route(std::uint16_t service, RouteFunc route) {
+    routes_[service] = std::move(route);
 }
 
-void Router::addMiddleware(Middleware middleware) {
-    middleware_.add(std::move(middleware));
-}
-
-void Router::setFallback(Handler handler) {
-    fallback_ = std::move(handler);
-}
-
-void Router::route(Session& session, const Message& msg) const {
-    if (!middleware_.execute(session, msg)) return;
-
-    auto code = msg.header().serviceCode;
-    auto it = handlers_.find(code);
-
-    if (it != handlers_.end()) {
+void Router::route(SessionPtr session, const Message& msg) const {
+    auto it = routes_.find(msg.header().service);
+    if (it != routes_.end()) {
         it->second(session, msg);
-    } else if (fallback_) {
-        fallback_(session, msg);
+    } else {
+        rgs::utils::Logger::instance().log(rgs::utils::LogLevel::Warning,
+                                           "No route registered for service");
     }
 }
 
-}
+} // namespace rgs::network

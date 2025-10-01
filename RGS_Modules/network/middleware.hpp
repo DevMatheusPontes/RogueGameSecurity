@@ -2,21 +2,19 @@
 
 #include "message.hpp"
 #include "session.hpp"
-#include <functional>
-#include <vector>
 
 namespace rgs::network {
 
-// Middleware: função que pode bloquear ou permitir execução
-using Middleware = std::function<bool(Session&, const Message&)>;
-
-class MiddlewareChain {
+// Interface para middlewares de mensagens
+class Middleware {
 public:
-    void add(Middleware m);
-    bool execute(Session& session, const Message& msg) const;
+    virtual ~Middleware() = default;
 
-private:
-    std::vector<Middleware> chain_;
+    // Chamado antes de processar mensagem
+    virtual void before(SessionPtr session, const Message& msg) {}
+
+    // Chamado depois de processar mensagem
+    virtual void after(SessionPtr session, const Message& msg) {}
 };
 
-}
+} // namespace rgs::network

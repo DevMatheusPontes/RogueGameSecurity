@@ -2,38 +2,45 @@
 
 namespace rgs::network {
 
-Message::Message() : header_{}, payload_{} {}
-
-Message::Message(const ProtocolHeader& h, std::vector<uint8_t> p)
-    : header_(h), payload_(std::move(p)) {}
-
-const ProtocolHeader& Message::header() const {
-    return header_;
+Message::Message(std::uint16_t service, std::uint16_t flags, std::vector<std::uint8_t> payload)
+    : payload_(std::move(payload)) {
+    header_.magic       = Protocol::MAGIC;
+    header_.version     = Protocol::VERSION;
+    header_.header_size = static_cast<std::uint16_t>(Protocol::HEADER_SIZE);
+    header_.service     = service;
+    header_.flags       = flags;
+    header_.payload_len = static_cast<std::uint32_t>(payload_.size());
+    header_.crc32       = Protocol::crc32(payload_.data(), payload_.size());
+    header_.reserved    = 0;
 }
 
-const std::vector<uint8_t>& Message::payload() const {
-    return payload_;
+std::vector<std::uint8_t> Message::to_bytes() const {
+    std::vector<std::uint8_t> out(Protocol::HEADER_SIZE + payload_.size());
+    std::array<std::uint8_t, Protocol::HEADER_SIZE> hdr_bytes{};
+    Protocol::encode_header(header_, hdr_bytes);
+    std::copy(hdr_bytes.begin(), hdr_bytes.end(), out.begin());
+    std::copy(payload_.begin(), payload_.end(), out.begin() + Protocol::HEADER_SIZE);
+    return out;
 }
 
-std::vector<uint8_t> Message::encode() const {
-    auto rawHeader = ProtocolHeader::build(header_);
-    std::vector<uint8_t> result;
-    result.reserve(PROTOCOL_HEADER_SIZE + payload_.size());
-    result.insert(result.end(), rawHeader.begin(), rawHeader.end());
-    result.insert(result.end(), payload_.begin(), payload_.end());
-    return result;
+std::optional<Message> Message::from_bytes(const std::uint8_t* data, std::size_t len) {
+    auto hdr_opt = Protocol::decode_header(data, len);
+    if (!hdr_opt) return std::nullopt;
+    auto hdr = *hdr_opt;
+
+    if (len < Protocol::HEADER_SIZE + hdr.payload_len) return std::nullopt;
+
+    std::vector<std::uint8_t> payload(hdr.payload_len);
+    std::copy(data + Protocol::HEADER_SIZE, data + Protocol::HEADER_SIZE + hdr.payload_len, payload.begin());
+
+    // Verifica CRC
+    auto crc = Protocol::crc32(payload.data(), payload.size());
+    if (crc != hdr.crc32) return std::nullopt;
+
+    Message msg;
+    msg.header_ = hdr;
+    msg.payload_ = std::move(payload);
+    return msg;
 }
 
-Message Message::decode(const std::vector<uint8_t>& raw) {
-    if (raw.size() < PROTOCOL_HEADER_SIZE) throw std::runtime_error("Pacote inválido");
-
-    std::array<uint8_t, PROTOCOL_HEADER_SIZE> rawHeader{};
-    std::copy_n(raw.begin(), PROTOCOL_HEADER_SIZE, rawHeader.begin());
-
-    auto h = ProtocolHeader::parse(rawHeader);
-    std::vector<uint8_t> payload(raw.begin() + PROTOCOL_HEADER_SIZE, raw.end());
-
-    return Message(h, std::move(payload));
-}
-
-}
+} // namespace rgs::network

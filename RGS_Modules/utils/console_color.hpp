@@ -1,29 +1,24 @@
 #pragma once
 
-#include <string>
-#include <vector>
+#if defined(_WIN32)
+  #include <Windows.h>
+#endif
 
-namespace rgs::utils {
+namespace rgs::utils::console {
 
-enum class ConsoleColor {
-    Default,
-    Red,
+enum class Color {
+    Reset = -1,
     Green,
     Yellow,
-    Blue,
-    Magenta,
+    Red,
     Cyan,
-    White
+    Gray
 };
 
-class Console {
-public:
-    static void setColor(ConsoleColor color);
-    static void reset();
-    static void print(ConsoleColor color, const std::string& text, bool newline = true);
+// Define a cor do console. Em ambientes não-Windows, é no-op.
+void set_console_color(Color c);
 
-    // 🔹 Impressão colorida por partes na mesma linha
-    static void printInline(const std::vector<std::pair<ConsoleColor, std::string>>& parts);
-};
+// Restaura a cor padrão.
+void reset_console_color();
 
-}
+} // namespace rgs::utils::console

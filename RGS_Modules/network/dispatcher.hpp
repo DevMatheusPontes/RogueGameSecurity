@@ -1,19 +1,24 @@
 #pragma once
 
-#include "router.hpp"
+#include <unordered_map>
+#include <functional>
+#include <cstdint>
 #include "message.hpp"
-#include "session.hpp"
+#include "handler.hpp"
 
 namespace rgs::network {
 
+// Dispatcher: registra handlers por service code e despacha mensagens.
 class Dispatcher {
 public:
-    explicit Dispatcher(Router& router);
+    using HandlerFunc = std::function<void(const Message&)>;
 
-    void dispatch(Session& session, const std::vector<uint8_t>& raw);
+    void register_handler(std::uint16_t service, HandlerFunc handler);
+
+    void dispatch(const Message& msg) const;
 
 private:
-    Router& router_;
+    std::unordered_map<std::uint16_t, HandlerFunc> handlers_;
 };
 
-}
+} // namespace rgs::network

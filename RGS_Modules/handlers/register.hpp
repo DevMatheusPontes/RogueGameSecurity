@@ -1,11 +1,13 @@
 #pragma once
 
-#include "../network/handler.hpp"
+#include "network/message.hpp"
+#include "network/session.hpp"
 
 namespace rgs::handlers {
 
-struct Register {
-    static rgs::network::Handler create();
+class RegisterHandler {
+public:
+    static void handle(rgs::network::SessionPtr session, const rgs::network::Message& msg);
 };
 
-}
+} // namespace rgs::handlers

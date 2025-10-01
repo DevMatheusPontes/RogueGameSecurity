@@ -1,27 +1,22 @@
 #pragma once
 
 #include <chrono>
+#include <unordered_map>
 #include <memory>
 #include "session.hpp"
-#include "timer_service.hpp"
 
 namespace rgs::network {
 
 class Heartbeat {
 public:
-    Heartbeat(Session& session, threading::TimerService& timer,
-              std::chrono::milliseconds interval = std::chrono::seconds(10));
+    explicit Heartbeat(std::chrono::seconds timeout);
 
-    void start();
-    void stop();
+    void mark_alive(SessionPtr session);
+    void check_timeouts();
 
 private:
-    void sendPing();
-
-    Session& session_;
-    threading::TimerService& timer_;
-    std::chrono::milliseconds interval_;
-    bool running_{false};
+    std::chrono::seconds timeout_;
+    std::unordered_map<SessionPtr, std::chrono::steady_clock::time_point> last_seen_;
 };
 
-}
+} // namespace rgs::network

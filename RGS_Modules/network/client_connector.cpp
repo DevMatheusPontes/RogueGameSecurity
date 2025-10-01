@@ -1,35 +1,29 @@
 #include "client_connector.hpp"
+#include "utils/logger.hpp"
 
 namespace rgs::network {
 
-ClientConnector::ClientConnector(boost::asio::io_context& ctx, Dispatcher& dispatcher)
-    : context_(ctx), resolver_(ctx), dispatcher_(dispatcher) {}
+ClientConnector::ClientConnector(boost::asio::io_context& io,
+                                 const boost::asio::ip::tcp::endpoint& endpoint)
+    : endpoint_(endpoint), socket_(io) {}
 
-void ClientConnector::connect(const std::string& host, uint16_t port,
-                              std::function<void(std::shared_ptr<Session>)> onConnect) {
-    running_ = true;
-    auto self = shared_from_this();
-
-    resolver_.async_resolve(host, std::to_string(port),
-        [this, self, onConnect](const boost::system::error_code& ec, tcp::resolver::results_type results) {
-            if (!ec) {
-                auto socket = std::make_shared<tcp::socket>(context_);
-                boost::asio::async_connect(*socket, results,
-                    [this, self, socket, onConnect](const boost::system::error_code& ec, const tcp::endpoint&) {
-                        if (!ec) {
-                            auto session = std::make_shared<Session>(std::move(*socket), dispatcher_);
-                            session->start();
-                            if (onConnect) onConnect(session);
-                        }
-                    });
-            }
-        });
+void ClientConnector::connect() {
+    auto self = this;
+    socket_.async_connect(endpoint_, [this, self](boost::system::error_code ec) {
+        if (!ec) {
+            auto session = std::make_shared<Session>(std::move(socket_));
+            if (on_connected_) on_connected_(session);
+            session->start();
+        } else {
+            rgs::utils::Logger::instance().log(rgs::utils::LogLevel::Error, "Connect failed");
+            if (on_error_) on_error_();
+        }
+    });
 }
 
 void ClientConnector::stop() {
-    running_ = false;
     boost::system::error_code ec;
-    resolver_.cancel();
+    socket_.close(ec);
 }
 
-}
+} // namespace rgs::network

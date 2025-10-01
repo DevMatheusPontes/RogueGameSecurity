@@ -1,23 +1,22 @@
 #pragma once
 
 #include <chrono>
-#include <functional>
 
 namespace rgs::network {
 
+// Estratégia de reconexão com backoff exponencial simples
 class ReconnectStrategy {
 public:
-    ReconnectStrategy(std::size_t maxAttempts,
-                      std::chrono::milliseconds baseDelay,
-                      bool exponential = true);
+    explicit ReconnectStrategy(std::chrono::milliseconds base_delay,
+                               std::chrono::milliseconds max_delay);
 
-    bool shouldRetry(std::size_t attempt) const;
-    std::chrono::milliseconds nextDelay(std::size_t attempt) const;
+    std::chrono::milliseconds next_delay();
+    void reset();
 
 private:
-    std::size_t maxAttempts_;
-    std::chrono::milliseconds baseDelay_;
-    bool exponential_;
+    std::chrono::milliseconds base_;
+    std::chrono::milliseconds max_;
+    std::chrono::milliseconds current_;
 };
 
-}
+} // namespace rgs::network

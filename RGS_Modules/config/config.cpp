@@ -1,26 +1,65 @@
 #include "config.hpp"
 #include <fstream>
-#include <nlohmann/json.hpp>
+#include <sstream>
+#include <algorithm>
 
 namespace rgs::config {
 
-Config Config::loadFromFile(const std::string& path) {
-    std::ifstream f(path);
-    if (!f.is_open()) return loadDefault();
+bool Config::load_from_file(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) return false;
 
-    nlohmann::json j;
-    f >> j;
+    std::string line;
+    while (std::getline(file, line)) {
+        // Remove espaços extras
+        line.erase(std::remove_if(line.begin(), line.end(),
+                                  [](unsigned char c){ return c == '\r' || c == '\n'; }),
+                   line.end());
 
-    Config c;
-    c.host    = j.value("host", "127.0.0.1");
-    c.port    = j.value("port", 5000);
-    c.threads = j.value("threads", 4);
-    c.verbose = j.value("verbose", false);
-    return c;
+        if (line.empty() || line[0] == '#') continue;
+
+        auto pos = line.find('=');
+        if (pos == std::string::npos) continue;
+
+        std::string key = line.substr(0, pos);
+        std::string value = line.substr(pos + 1);
+
+        // Trim espaços
+        auto trim = [](std::string& s) {
+            s.erase(s.begin(), std::find_if(s.begin(), s.end(),
+                                            [](unsigned char ch){ return !std::isspace(ch); }));
+            s.erase(std::find_if(s.rbegin(), s.rend(),
+                                 [](unsigned char ch){ return !std::isspace(ch); }).base(),
+                    s.end());
+        };
+        trim(key);
+        trim(value);
+
+        if (!key.empty()) {
+            values_[key] = value;
+        }
+    }
+    return true;
 }
 
-Config Config::loadDefault() {
-    return {"127.0.0.1", 5000, 4, false};
+std::optional<std::string> Config::get(std::string_view key) const {
+    auto it = values_.find(std::string(key));
+    if (it != values_.end()) {
+        return it->second;
+    }
+    return std::nullopt;
 }
 
+std::optional<rgs::security::SecureString> Config::get_secure(std::string_view key) const {
+    auto it = values_.find(std::string(key));
+    if (it != values_.end()) {
+        return rgs::security::SecureString(it->second);
+    }
+    return std::nullopt;
 }
+
+void Config::set(std::string key, std::string value) {
+    values_[std::move(key)] = std::move(value);
+}
+
+} // namespace rgs::config

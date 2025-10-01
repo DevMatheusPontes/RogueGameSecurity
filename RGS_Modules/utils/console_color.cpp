@@ -1,53 +1,37 @@
 #include "console_color.hpp"
-#include <windows.h>
-#include <iostream>
 
-namespace rgs::utils {
+namespace rgs::utils::console {
 
-namespace {
-    WORD getColorAttribute(ConsoleColor color) {
-        switch (color) {
-            case ConsoleColor::Red:     return FOREGROUND_RED | FOREGROUND_INTENSITY;
-            case ConsoleColor::Green:   return FOREGROUND_GREEN | FOREGROUND_INTENSITY;
-            case ConsoleColor::Yellow:  return FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY;
-            case ConsoleColor::Blue:    return FOREGROUND_BLUE | FOREGROUND_INTENSITY;
-            case ConsoleColor::Magenta: return FOREGROUND_RED | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
-            case ConsoleColor::Cyan:    return FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
-            case ConsoleColor::White:   return FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
-            case ConsoleColor::Default: return FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
-            default: return FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
-        }
-    }
-
-    HANDLE getConsoleHandle() {
-        return GetStdHandle(STD_OUTPUT_HANDLE);
+#if defined(_WIN32)
+static WORD to_win_color(Color c) {
+    switch (c) {
+        case Color::Green:  return FOREGROUND_GREEN | FOREGROUND_INTENSITY;
+        case Color::Yellow: return FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_INTENSITY;
+        case Color::Red:    return FOREGROUND_RED | FOREGROUND_INTENSITY;
+        case Color::Cyan:   return FOREGROUND_GREEN | FOREGROUND_BLUE | FOREGROUND_INTENSITY;
+        case Color::Gray:   return FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
+        case Color::Reset:
+        default:            return FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE;
     }
 }
 
-void Console::setColor(ConsoleColor color) {
-    SetConsoleTextAttribute(getConsoleHandle(), getColorAttribute(color));
+static HANDLE stdout_handle() {
+    static HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    return h;
 }
 
-void Console::reset() {
-    setColor(ConsoleColor::Default);
+void set_console_color(Color c) {
+    if (c == Color::Reset) { reset_console_color(); return; }
+    SetConsoleTextAttribute(stdout_handle(), to_win_color(c));
 }
 
-void Console::print(ConsoleColor color, const std::string& text, bool newline) {
-    setColor(color);
-    if (newline)
-        std::cout << text << std::endl;
-    else
-        std::cout << text;
-    reset();
+void reset_console_color() {
+    SetConsoleTextAttribute(stdout_handle(),
+                            FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
 }
+#else
+void set_console_color(Color) {}
+void reset_console_color() {}
+#endif
 
-void Console::printInline(const std::vector<std::pair<ConsoleColor, std::string>>& parts) {
-    for (const auto& [color, text] : parts) {
-        setColor(color);
-        std::cout << text;
-    }
-    reset();
-    std::cout << std::endl;
-}
-
-}
+} // namespace rgs::utils::console

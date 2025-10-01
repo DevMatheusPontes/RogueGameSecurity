@@ -1,11 +1,13 @@
 #pragma once
 
-#include "../network/handler.hpp"
+#include "network/message.hpp"
+#include "network/session.hpp"
 
 namespace rgs::handlers {
 
-struct Ping {
-    static rgs::network::Handler create();
+class PingHandler {
+public:
+    static void handle(rgs::network::SessionPtr session, const rgs::network::Message& msg);
 };
 
-}
+} // namespace rgs::handlers

@@ -2,43 +2,78 @@
 
 namespace rgs::network {
 
-ProtocolHeader ProtocolHeader::parse(const std::array<uint8_t, PROTOCOL_HEADER_SIZE>& raw) {
-    ProtocolHeader h;
-    h.version        = raw[0];
-    h.flags          = raw[1];
-    h.serviceCode    = (raw[2] << 8) | raw[3];
-    h.messageType    = (raw[4] << 8) | raw[5];
-    h.correlationId  = (raw[6] << 24) | (raw[7] << 16) | (raw[8] << 8) | raw[9];
-    h.payloadLength  = (raw[10] << 24) | (raw[11] << 16) | (raw[12] << 8) | raw[13];
-    h.reserved       = (raw[14] << 24) | (raw[15] << 16) | (raw[16] << 8) | raw[17];
-    return h;
+void Protocol::encode_header(const ProtocolHeader& hdr, std::array<std::uint8_t, HEADER_SIZE>& out) {
+    auto write16 = [&](std::size_t pos, std::uint16_t v) {
+        out[pos] = static_cast<std::uint8_t>(v & 0xFF);
+        out[pos+1] = static_cast<std::uint8_t>((v >> 8) & 0xFF);
+    };
+    auto write32 = [&](std::size_t pos, std::uint32_t v) {
+        out[pos] = static_cast<std::uint8_t>(v & 0xFF);
+        out[pos+1] = static_cast<std::uint8_t>((v >> 8) & 0xFF);
+        out[pos+2] = static_cast<std::uint8_t>((v >> 16) & 0xFF);
+        out[pos+3] = static_cast<std::uint8_t>((v >> 24) & 0xFF);
+    };
+
+    write32(0, hdr.magic);
+    write16(4, hdr.version);
+    write16(6, hdr.header_size);
+    write16(8, hdr.service);
+    write16(10, hdr.flags);
+    write32(12, hdr.payload_len);
+    write32(16, hdr.crc32);
+    write32(20, hdr.reserved);
 }
 
-std::array<uint8_t, PROTOCOL_HEADER_SIZE> ProtocolHeader::build(const ProtocolHeader& h) {
-    std::array<uint8_t, PROTOCOL_HEADER_SIZE> raw{};
-    raw[0]  = h.version;
-    raw[1]  = h.flags;
-    raw[2]  = h.serviceCode >> 8;
-    raw[3]  = h.serviceCode & 0xFF;
-    raw[4]  = h.messageType >> 8;
-    raw[5]  = h.messageType & 0xFF;
-    raw[6]  = h.correlationId >> 24;
-    raw[7]  = (h.correlationId >> 16) & 0xFF;
-    raw[8]  = (h.correlationId >> 8) & 0xFF;
-    raw[9]  = h.correlationId & 0xFF;
-    raw[10] = h.payloadLength >> 24;
-    raw[11] = (h.payloadLength >> 16) & 0xFF;
-    raw[12] = (h.payloadLength >> 8) & 0xFF;
-    raw[13] = h.payloadLength & 0xFF;
-    raw[14] = h.reserved >> 24;
-    raw[15] = (h.reserved >> 16) & 0xFF;
-    raw[16] = (h.reserved >> 8) & 0xFF;
-    raw[17] = h.reserved & 0xFF;
-    return raw;
+std::optional<ProtocolHeader> Protocol::decode_header(const std::uint8_t* data, std::size_t len) {
+    if (len < HEADER_SIZE) return std::nullopt;
+
+    auto read16 = [&](std::size_t pos) {
+        return static_cast<std::uint16_t>(data[pos] | (data[pos+1] << 8));
+    };
+    auto read32 = [&](std::size_t pos) {
+        return static_cast<std::uint32_t>(data[pos] |
+                                         (data[pos+1] << 8) |
+                                         (data[pos+2] << 16) |
+                                         (data[pos+3] << 24));
+    };
+
+    ProtocolHeader hdr;
+    hdr.magic       = read32(0);
+    hdr.version     = read16(4);
+    hdr.header_size = read16(6);
+    hdr.service     = read16(8);
+    hdr.flags       = read16(10);
+    hdr.payload_len = read32(12);
+    hdr.crc32       = read32(16);
+    hdr.reserved    = read32(20);
+
+    if (hdr.magic != MAGIC || hdr.header_size != HEADER_SIZE) {
+        return std::nullopt;
+    }
+    return hdr;
 }
 
-bool validateHeader(const ProtocolHeader& h) {
-    return h.version == 1 && h.payloadLength <= 65536;
+// Implementação simples de CRC32 (polinômio 0xEDB88320)
+std::uint32_t Protocol::crc32(const std::uint8_t* data, std::size_t len) {
+    static std::uint32_t table[256];
+    static bool init = false;
+    if (!init) {
+        for (std::uint32_t i = 0; i < 256; i++) {
+            std::uint32_t c = i;
+            for (std::size_t j = 0; j < 8; j++) {
+                if (c & 1) c = 0xEDB88320U ^ (c >> 1);
+                else c >>= 1;
+            }
+            table[i] = c;
+        }
+        init = true;
+    }
+
+    std::uint32_t crc = 0xFFFFFFFFU;
+    for (std::size_t i = 0; i < len; i++) {
+        crc = table[(crc ^ data[i]) & 0xFF] ^ (crc >> 8);
+    }
+    return crc ^ 0xFFFFFFFFU;
 }
 
-}
+} // namespace rgs::network

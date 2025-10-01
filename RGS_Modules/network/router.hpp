@@ -1,24 +1,24 @@
 #pragma once
 
-#include "handler.hpp"
-#include "middleware.hpp"
 #include <unordered_map>
+#include <functional>
 #include <cstdint>
+#include "message.hpp"
+#include "session.hpp"
 
 namespace rgs::network {
 
+// Router: roteia mensagens recebidas para callbacks que conhecem a sessão.
 class Router {
 public:
-    void registerHandler(uint16_t serviceCode, Handler handler);
-    void addMiddleware(Middleware middleware);
-    void setFallback(Handler handler);
+    using RouteFunc = std::function<void(SessionPtr, const Message&)>;
 
-    void route(Session& session, const Message& msg) const;
+    void register_route(std::uint16_t service, RouteFunc route);
+
+    void route(SessionPtr session, const Message& msg) const;
 
 private:
-    std::unordered_map<uint16_t, Handler> handlers_;
-    MiddlewareChain middleware_;
-    Handler fallback_;
+    std::unordered_map<std::uint16_t, RouteFunc> routes_;
 };
 
-}
+} // namespace rgs::network

@@ -2,20 +2,18 @@
 
 namespace rgs::network {
 
-ReconnectStrategy::ReconnectStrategy(std::size_t maxAttempts,
-                                     std::chrono::milliseconds baseDelay,
-                                     bool exponential)
-    : maxAttempts_(maxAttempts), baseDelay_(baseDelay), exponential_(exponential) {}
+ReconnectStrategy::ReconnectStrategy(std::chrono::milliseconds base_delay,
+                                     std::chrono::milliseconds max_delay)
+    : base_(base_delay), max_(max_delay), current_(base_delay) {}
 
-bool ReconnectStrategy::shouldRetry(std::size_t attempt) const {
-    return attempt < maxAttempts_;
+std::chrono::milliseconds ReconnectStrategy::next_delay() {
+    auto delay = current_;
+    current_ = std::min(current_ * 2, max_);
+    return delay;
 }
 
-std::chrono::milliseconds ReconnectStrategy::nextDelay(std::size_t attempt) const {
-    if (exponential_) {
-        return baseDelay_ * (1 << attempt); // backoff exponencial
-    }
-    return baseDelay_; // intervalo fixo
+void ReconnectStrategy::reset() {
+    current_ = base_;
 }
 
-}
+} // namespace rgs::network

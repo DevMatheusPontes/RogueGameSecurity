@@ -1,25 +1,21 @@
 #include "ping.hpp"
-#include "../network/secure_channel.hpp"
-#include "../network/packet_builder.hpp"
-#include "../network/service_codes.hpp"
+#include "utils/logger.hpp"
+#include "security/secure_string.hpp"
+#include "network/packet_builder.hpp"
 
 namespace rgs::handlers {
 
-rgs::network::Handler Ping::create() {
-    return [](rgs::network::Session& session, const rgs::network::Message& msg) {
-        using namespace rgs::network;
+void PingHandler::handle(rgs::network::SessionPtr session, const rgs::network::Message& msg) {
+    using namespace rgs::utils;
+    using namespace rgs::security;
 
-        auto decoded = SecureChannel::decodeSecure(msg.encode());
+    SecureString logMsg("Received PING");
+    Logger::instance().log(LogLevel::Debug, logMsg);
 
-        auto response = PacketBuilder::buildFromString(
-            ServiceCode::Ping,
-            0x0002,
-            decoded.header().correlationId,
-            "PONG"
-        );
-
-        session.send(response.encode());
-    };
+    // Responde com PONG
+    SecureString reply("PONG");
+    auto response = rgs::network::PacketBuilder::from_secure_string(msg.header().service, reply);
+    session->async_send(response);
 }
 
-}
+} // namespace rgs::handlers

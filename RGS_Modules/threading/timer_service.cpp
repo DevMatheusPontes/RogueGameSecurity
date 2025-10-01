@@ -2,30 +2,26 @@
 
 namespace rgs::threading {
 
-TimerService::TimerService(boost::asio::io_context& ctx) : context_(ctx) {}
+TimerService::TimerService(boost::asio::io_context& io) : io_(io) {}
 
-void TimerService::scheduleOnce(std::chrono::milliseconds delay, std::function<void()> task) {
-    auto timer = std::make_shared<boost::asio::steady_timer>(context_, delay);
-    timer->async_wait([task, timer](const boost::system::error_code&) {
-        task();
+void TimerService::schedule(std::chrono::steady_clock::duration duration,
+                            std::function<void()> callback) {
+    auto timer = std::make_shared<boost::asio::steady_timer>(io_, duration);
+    timers_.push_back(timer);
+
+    timer->async_wait([this, timer, callback](const boost::system::error_code& ec) {
+        if (!ec) {
+            callback();
+        }
     });
 }
 
-void TimerService::scheduleRecurring(std::chrono::milliseconds interval, std::function<void()> task) {
-    auto timer = std::make_shared<boost::asio::steady_timer>(context_, interval);
-    std::function<void()> wrapper;
-
-    wrapper = [timer, interval, task, wrapper]() mutable {
-        task();
-        timer->expires_after(interval);
-        timer->async_wait([wrapper](const boost::system::error_code&) {
-            wrapper();
-        });
-    };
-
-    timer->async_wait([wrapper](const boost::system::error_code&) {
-        wrapper();
-    });
+void TimerService::cancel_all() {
+    for (auto& t : timers_) {
+        boost::system::error_code ec;
+        t->cancel(ec);
+    }
+    timers_.clear();
 }
 
-}
+} // namespace rgs::threading

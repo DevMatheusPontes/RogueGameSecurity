@@ -4,38 +4,51 @@
 #include <deque>
 #include <memory>
 #include <vector>
-#include <string>
+#include <cstdint>
 #include <functional>
-#include "dispatcher.hpp"
+#include "protocol.hpp"
+#include "message.hpp"
+#include "threading/timer_service.hpp"
+#include "utils/logger.hpp"
 
 namespace rgs::network {
 
+// Forward declaration
+class Session;
+using SessionPtr = std::shared_ptr<Session>;
+
+// Callback para eventos de sessão
+using SessionCallback = std::function<void(SessionPtr)>;
+
+// Gerencia uma conexão (TCP) com leitura/escrita assíncrona
 class Session : public std::enable_shared_from_this<Session> {
 public:
-    using tcp = boost::asio::ip::tcp;
-
-    Session(tcp::socket socket, Dispatcher& dispatcher);
+    explicit Session(boost::asio::ip::tcp::socket socket);
 
     void start();
-    void send(const std::vector<uint8_t>& data);
-    void close();
+    void stop();
 
-    std::string id() const;
-    std::string remoteIp() const;
-    bool isOpen() const;
+    void async_send(const Message& msg);
+
+    void set_on_close(SessionCallback cb) { on_close_ = std::move(cb); }
+    void set_on_message(std::function<void(SessionPtr, Message)> cb) { on_message_ = std::move(cb); }
+
+    boost::asio::ip::tcp::socket& socket() { return socket_; }
 
 private:
-    void doReadHeader();
-    void doReadBody(std::size_t bodyLength);
-    void doWrite();
+    void do_read_header();
+    void do_read_body(std::size_t body_len);
+    void do_write();
 
-    tcp::socket socket_;
-    Dispatcher& dispatcher_;
-    std::array<uint8_t, PROTOCOL_HEADER_SIZE> readHeader_;
-    std::vector<uint8_t> readBody_;
-    std::deque<std::vector<uint8_t>> writeQueue_;
-    bool open_{true};
-    std::string id_;
+    void close();
+
+    boost::asio::ip::tcp::socket socket_;
+    ProtocolHeader read_header_{};
+    std::vector<std::uint8_t> read_buffer_;
+    std::deque<std::vector<std::uint8_t>> write_queue_;
+
+    SessionCallback on_close_;
+    std::function<void(SessionPtr, Message)> on_message_;
 };
 
-}
+} // namespace rgs::network

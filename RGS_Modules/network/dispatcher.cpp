@@ -1,17 +1,20 @@
 #include "dispatcher.hpp"
+#include "utils/logger.hpp"
 
 namespace rgs::network {
 
-Dispatcher::Dispatcher(Router& router) : router_(router) {}
+void Dispatcher::register_handler(std::uint16_t service, HandlerFunc handler) {
+    handlers_[service] = std::move(handler);
+}
 
-void Dispatcher::dispatch(Session& session, const std::vector<uint8_t>& raw) {
-    try {
-        auto msg = Message::decode(raw);
-        if (!validateHeader(msg.header())) return;
-        router_.route(session, msg);
-    } catch (...) {
-        // falha silenciosa ou log de erro
+void Dispatcher::dispatch(const Message& msg) const {
+    auto it = handlers_.find(msg.header().service);
+    if (it != handlers_.end()) {
+        it->second(msg);
+    } else {
+        rgs::utils::Logger::instance().log(rgs::utils::LogLevel::Warning,
+                                           "No handler registered for service");
     }
 }
 
-}
+} // namespace rgs::network

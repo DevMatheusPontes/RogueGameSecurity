@@ -16,6 +16,21 @@
     <Filter Include="network">
       <UniqueIdentifier>{8319a5a4-e63e-49c8-b985-481dba98df8e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="config">
+      <UniqueIdentifier>{b6808994-e147-401d-a298-14816def5d1b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="handlers">
+      <UniqueIdentifier>{913ee703-8ba1-4010-b495-5db8689e9f47}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="security">
+      <UniqueIdentifier>{478c8542-5442-419e-b68d-dc1dfcbdc9d9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="threading">
+      <UniqueIdentifier>{f5a12650-adfb-4a86-a917-0ae6b0ad7e67}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="utils">
+      <UniqueIdentifier>{56f737ae-ed4e-4474-a138-33e778feab48}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="framework.h">
@@ -24,17 +39,92 @@
     <ClInclude Include="pch.h">
       <Filter>Arquivos de Cabeçalho</Filter>
     </ClInclude>
-    <ClInclude Include="network\io_context_pool.hpp">
+    <ClInclude Include="network\client_connector.hpp">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\connection_manager.hpp">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\dispatcher.hpp">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\handler.hpp">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\heartbeat.hpp">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\load_balancer.hpp">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\message.hpp">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\middleware.hpp">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\packet_builder.hpp">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\protocol.hpp">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\reconnect_strategy.hpp">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\router.hpp">
+      <Filter>network</Filter>
+    </ClInclude>
+    <ClInclude Include="network\secure_channel.hpp">
       <Filter>network</Filter>
     </ClInclude>
     <ClInclude Include="network\server_acceptor.hpp">
       <Filter>network</Filter>
     </ClInclude>
+    <ClInclude Include="network\service_codes.hpp">
+      <Filter>network</Filter>
+    </ClInclude>
     <ClInclude Include="network\session.hpp">
       <Filter>network</Filter>
     </ClInclude>
-    <ClInclude Include="network\protocol.hpp">
-      <Filter>network</Filter>
+    <ClInclude Include="handlers\auth.hpp">
+      <Filter>handlers</Filter>
+    </ClInclude>
+    <ClInclude Include="handlers\hello.hpp">
+      <Filter>handlers</Filter>
+    </ClInclude>
+    <ClInclude Include="handlers\ping.hpp">
+      <Filter>handlers</Filter>
+    </ClInclude>
+    <ClInclude Include="handlers\register.hpp">
+      <Filter>handlers</Filter>
+    </ClInclude>
+    <ClInclude Include="config\config.hpp">
+      <Filter>config</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\console_color.hpp">
+      <Filter>utils</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\logger.hpp">
+      <Filter>utils</Filter>
+    </ClInclude>
+    <ClInclude Include="threading\io_context_pool.hpp">
+      <Filter>threading</Filter>
+    </ClInclude>
+    <ClInclude Include="threading\thread_pool.hpp">
+      <Filter>threading</Filter>
+    </ClInclude>
+    <ClInclude Include="threading\timer_service.hpp">
+      <Filter>threading</Filter>
+    </ClInclude>
+    <ClInclude Include="security\obfuscate.hpp">
+      <Filter>security</Filter>
+    </ClInclude>
+    <ClInclude Include="security\secure_string.hpp">
+      <Filter>security</Filter>
+    </ClInclude>
+    <ClInclude Include="security\nonce.hpp">
+      <Filter>security</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -44,14 +134,77 @@
     <ClCompile Include="pch.cpp">
       <Filter>Arquivos de Origem</Filter>
     </ClCompile>
+    <ClCompile Include="network\client_connector.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="network\connection_manager.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="network\dispatcher.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="network\heartbeat.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="network\load_balance.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="network\message.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="network\packet_builder.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="network\protocol.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="network\reconnect_strategy.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="network\router.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
+    <ClCompile Include="network\secure_channel.cpp">
+      <Filter>network</Filter>
+    </ClCompile>
     <ClCompile Include="network\server_acceptor.cpp">
       <Filter>network</Filter>
     </ClCompile>
     <ClCompile Include="network\session.cpp">
       <Filter>network</Filter>
     </ClCompile>
-    <ClCompile Include="network\protocol.cpp">
-      <Filter>network</Filter>
+    <ClCompile Include="handlers\auth.cpp">
+      <Filter>handlers</Filter>
+    </ClCompile>
+    <ClCompile Include="handlers\hello.cpp">
+      <Filter>handlers</Filter>
+    </ClCompile>
+    <ClCompile Include="handlers\ping.cpp">
+      <Filter>handlers</Filter>
+    </ClCompile>
+    <ClCompile Include="handlers\register.cpp">
+      <Filter>handlers</Filter>
+    </ClCompile>
+    <ClCompile Include="config\config.cpp">
+      <Filter>config</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\console_color.cpp">
+      <Filter>utils</Filter>
+    </ClCompile>
+    <ClCompile Include="utils\logger.cpp">
+      <Filter>utils</Filter>
+    </ClCompile>
+    <ClCompile Include="threading\io_context_pool.cpp">
+      <Filter>threading</Filter>
+    </ClCompile>
+    <ClCompile Include="threading\thread_pool.cpp">
+      <Filter>threading</Filter>
+    </ClCompile>
+    <ClCompile Include="threading\timer_service.cpp">
+      <Filter>threading</Filter>
+    </ClCompile>
+    <ClCompile Include="security\nonce.cpp">
+      <Filter>security</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

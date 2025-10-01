@@ -1,72 +1,106 @@
 #include "client.hpp"
-#include "network/io_context_pool.hpp"
-#include "network/session.hpp"
-#include "network/protocol.hpp"
-#include <boost/asio.hpp>
-#include <memory>
-#include <iostream>
-#include <thread>
-#include <chrono>
 
-using namespace rgs::modules::network;
-using tcp = boost::asio::ip::tcp;
+#include "utils/logger.hpp"
+#include "network/client_connector.hpp"
+#include "network/reconnect_strategy.hpp"
+#include "network/packet_builder.hpp"
+#include "network/service_codes.hpp"
+#include "security/secure_string.hpp"
+
+#include <boost/asio.hpp>
+#include <thread>
+#include <atomic>
+#include <memory>
 
 namespace {
-    std::unique_ptr<IoContextPool> pool;
-    std::shared_ptr<Session> session;
-    std::string g_host;
-    int g_port = 0;
+    std::unique_ptr<boost::asio::io_context> io;
+    std::unique_ptr<std::thread> io_thread;
+    std::atomic<bool> running{false};
+    std::shared_ptr<rgs::network::ClientConnector> connector;
+    std::unique_ptr<rgs::network::ReconnectStrategy> reconnect;
 }
 
 namespace rgs::client {
 
-void start(const std::string& host, int port) {
-    try {
-        g_host = host;
-        g_port = port;
+void StartClient() {
+    if (running.exchange(true)) return;
 
-        pool = std::make_unique<IoContextPool>(2);
-        auto& io = pool->next();
+    io = std::make_unique<boost::asio::io_context>();
+    boost::asio::ip::tcp::endpoint endpoint(
+        boost::asio::ip::address::from_string("127.0.0.1"), 9000);
 
-        tcp::resolver resolver(io);
-        auto endpoints = resolver.resolve(g_host, std::to_string(g_port));
+    reconnect = std::make_unique<rgs::network::ReconnectStrategy>(
+        std::chrono::milliseconds(1000), std::chrono::milliseconds(10000));
 
-        session = std::make_shared<Session>(io);
-        boost::asio::async_connect(
-            session->socket(), endpoints,
-            [](boost::system::error_code ec, const tcp::endpoint&) {
-                if (!ec) {
-                    std::cout << "[Client] Connected to Central\n";
-                    session->start();
+    connector = std::make_shared<rgs::network::ClientConnector>(*io, endpoint);
 
-                    // Envia mensagem usando o protocolo
-                    ProtocolMessage msg = ProtocolMessage::fromString(MessageType::Hello, "Hello from RGS_Client!");
-                    session->send(msg);
-                } else {
-                    std::cerr << "[Client] connect error: " << ec.message() << std::endl;
+    std::function<void()> do_connect;
+
+    do_connect = [&]() {
+        connector->set_on_connected([&](rgs::network::SessionPtr session) {
+            rgs::utils::Logger::instance().log(rgs::utils::LogLevel::Info,
+                                               "Client connected to Central", false);
+
+            reconnect->reset();
+
+            // Enviar HELLO
+            rgs::security::SecureString hello("HELLO_FROM_CLIENT");
+            auto msg = rgs::network::PacketBuilder::from_secure_string(SERVICE_HELLO, hello);
+            session->async_send(msg);
+
+            session->set_on_message([&](rgs::network::SessionPtr s, rgs::network::Message m) {
+                switch (m.header().service) {
+                    case SERVICE_PING: {
+                        rgs::utils::Logger::instance().log(rgs::utils::LogLevel::Debug,
+                                                           "Client received PING", false);
+                        rgs::security::SecureString pong("PONG_FROM_CLIENT");
+                        auto reply = rgs::network::PacketBuilder::from_secure_string(SERVICE_PING, pong);
+                        s->async_send(reply);
+                        break;
+                    }
+                    case SERVICE_HELLO:
+                        rgs::utils::Logger::instance().log(rgs::utils::LogLevel::Info,
+                                                           "Client received HELLO_ACK", false);
+                        break;
+                    default:
+                        rgs::utils::Logger::instance().log(rgs::utils::LogLevel::Warning,
+                                                           "Client unknown service code", false);
+                        break;
                 }
-            }
-        );
+            });
 
-        pool->run();
+            session->set_on_close([&](rgs::network::SessionPtr) {
+                rgs::utils::Logger::instance().log(rgs::utils::LogLevel::Warning,
+                                                   "Client disconnected", false);
+                auto delay = reconnect->next_delay();
+                std::this_thread::sleep_for(delay);
+                do_connect();
+            });
+        });
 
-        std::cout << "[Client] Pressione ENTER para encerrar...\n";
-        std::cin.get();
+        connector->set_on_error([&]() {
+            rgs::utils::Logger::instance().log(rgs::utils::LogLevel::Error,
+                                               "Client connection failed", false);
+            auto delay = reconnect->next_delay();
+            std::this_thread::sleep_for(delay);
+            do_connect();
+        });
 
-        stop();
+        connector->connect();
+    };
 
-    } catch (const std::exception& e) {
-        std::cerr << "[Client] fatal: " << e.what() << std::endl;
-    }
+    do_connect();
+    io_thread = std::make_unique<std::thread>([]() { io->run(); });
 }
 
-void stop() {
-    try {
-        if (session) session->close();
-        if (pool) pool->stop();
-        session.reset();
-        pool.reset();
-    } catch (...) {}
+void StopClient() {
+    if (!running.exchange(false)) return;
+    io->stop();
+    if (io_thread && io_thread->joinable()) io_thread->join();
+    io.reset();
+    io_thread.reset();
+    connector.reset();
+    reconnect.reset();
 }
 
 } // namespace rgs::client

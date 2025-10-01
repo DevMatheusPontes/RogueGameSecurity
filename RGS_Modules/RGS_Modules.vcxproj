@@ -84,6 +84,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/guard:cf %(AdditionalOptions)</AdditionalOptions>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <AdditionalIncludeDirectories>$(SolutionDir)RGS_Modules</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>
@@ -143,15 +144,55 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="config\config.hpp" />
     <ClInclude Include="framework.h" />
-    <ClInclude Include="network\io_context_pool.hpp" />
+    <ClInclude Include="handlers\auth.hpp" />
+    <ClInclude Include="handlers\hello.hpp" />
+    <ClInclude Include="handlers\ping.hpp" />
+    <ClInclude Include="handlers\register.hpp" />
+    <ClInclude Include="network\client_connector.hpp" />
+    <ClInclude Include="network\connection_manager.hpp" />
+    <ClInclude Include="network\dispatcher.hpp" />
+    <ClInclude Include="network\handler.hpp" />
+    <ClInclude Include="network\heartbeat.hpp" />
+    <ClInclude Include="network\load_balancer.hpp" />
+    <ClInclude Include="network\message.hpp" />
+    <ClInclude Include="network\middleware.hpp" />
+    <ClInclude Include="network\packet_builder.hpp" />
     <ClInclude Include="network\protocol.hpp" />
+    <ClInclude Include="network\reconnect_strategy.hpp" />
+    <ClInclude Include="network\router.hpp" />
+    <ClInclude Include="network\secure_channel.hpp" />
     <ClInclude Include="network\server_acceptor.hpp" />
+    <ClInclude Include="network\service_codes.hpp" />
     <ClInclude Include="network\session.hpp" />
     <ClInclude Include="pch.h" />
+    <ClInclude Include="security\nonce.hpp" />
+    <ClInclude Include="security\obfuscate.hpp" />
+    <ClInclude Include="security\secure_string.hpp" />
+    <ClInclude Include="threading\io_context_pool.hpp" />
+    <ClInclude Include="threading\thread_pool.hpp" />
+    <ClInclude Include="threading\timer_service.hpp" />
+    <ClInclude Include="utils\console_color.hpp" />
+    <ClInclude Include="utils\logger.hpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="config\config.cpp" />
+    <ClCompile Include="handlers\auth.cpp" />
+    <ClCompile Include="handlers\hello.cpp" />
+    <ClCompile Include="handlers\ping.cpp" />
+    <ClCompile Include="handlers\register.cpp" />
+    <ClCompile Include="network\client_connector.cpp" />
+    <ClCompile Include="network\connection_manager.cpp" />
+    <ClCompile Include="network\dispatcher.cpp" />
+    <ClCompile Include="network\heartbeat.cpp" />
+    <ClCompile Include="network\load_balance.cpp" />
+    <ClCompile Include="network\message.cpp" />
+    <ClCompile Include="network\packet_builder.cpp" />
     <ClCompile Include="network\protocol.cpp" />
+    <ClCompile Include="network\reconnect_strategy.cpp" />
+    <ClCompile Include="network\router.cpp" />
+    <ClCompile Include="network\secure_channel.cpp" />
     <ClCompile Include="network\server_acceptor.cpp" />
     <ClCompile Include="network\session.cpp" />
     <ClCompile Include="pch.cpp">
@@ -161,6 +202,12 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="RGS_Modules.cpp" />
+    <ClCompile Include="security\nonce.cpp" />
+    <ClCompile Include="threading\io_context_pool.cpp" />
+    <ClCompile Include="threading\thread_pool.cpp" />
+    <ClCompile Include="threading\timer_service.cpp" />
+    <ClCompile Include="utils\console_color.cpp" />
+    <ClCompile Include="utils\logger.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -1,29 +1,22 @@
 #pragma once
 
 #include <vector>
-#include <string>
-#include <atomic>
-#include <mutex>
+#include <memory>
+#include "session.hpp"
 
 namespace rgs::network {
 
+// Balanceador simples Round Robin
 class LoadBalancer {
 public:
-    LoadBalancer();
+    void add(SessionPtr session);
+    void remove(SessionPtr session);
 
-    void addTarget(const std::string& host, uint16_t port);
-    void clear();
-
-    // Round-robin
-    std::pair<std::string, uint16_t> next();
-
-    // Retorna quantidade de alvos
-    std::size_t size() const;
+    SessionPtr next();
 
 private:
-    std::vector<std::pair<std::string, uint16_t>> targets_;
-    mutable std::mutex mutex_;
-    std::atomic<std::size_t> index_{0};
+    std::vector<SessionPtr> sessions_;
+    std::size_t index_ = 0;
 };
 
-}
+} // namespace rgs::network
